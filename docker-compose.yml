@@ -1,0 +1,65 @@
+networks:
+    proxy:
+        external: true
+        name: proxy
+    internal:
+        name: internal
+
+services:
+    db_kriegspiel:
+        image: postgres
+        restart: unless-stopped
+        environment:
+            - POSTGRES_PASSWORD=${DB_PASSWORD}
+            - POSTGRES_USER=${DB_USERNAME}
+            - POSTGRES_DB=${DB_DATABASE}
+        networks:
+            - internal
+        volumes:
+            - ./.docker/pg_data:/var/lib/postgresql
+        ports:
+            - "15433:5432"
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}"]
+            interval: 1s
+            timeout: 1s
+            retries: 60
+
+    nginx:
+        image: nginx:alpine
+        restart: unless-stopped
+        working_dir: /app
+        volumes:
+            - ./app:/app
+            - ./.docker/nginx/conf/nginx.conf:/etc/nginx/conf/nginx.conf:ro
+            - ./.docker/nginx/conf.d:/etc/nginx/conf.d:ro
+        networks:
+            - internal
+            - proxy
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.rsis_edu_backend.rule=Host(`localhost`)"
+            - "traefik.http.services.rsis_edu_backend.loadbalancer.server.port=80"
+            - "traefik.docker.network=proxy"
+        depends_on:
+            db_kriegspiel:
+                condition: service_healthy
+        ports:
+            - "80:80"
+
+    php:
+        build: .docker/php
+        restart: unless-stopped
+        working_dir: /app
+        volumes:
+            - ./:/app
+            - ./.docker/php/php-ini-overrides.ini:/usr/local/etc/php/conf.d/99-overrides.ini:ro
+            - ./.docker/php/php.ini:/usr/local/etc/php/php.ini
+            - ./.docker/php/supervisord.conf:/etc/supervisor/conf.d/supervisor.conf:ro
+        networks:
+            - internal
+        ports:
+            - "9501:9501"
+        depends_on:
+            db_kriegspiel:
+                condition: service_healthy
