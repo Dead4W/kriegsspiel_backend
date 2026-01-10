@@ -167,7 +167,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             return $unit['team'] && $unit['team'] === $message['data'];
                         });
                         foreach ($otherTeamUnits as $unitUuid => $unit) {
-                            $copyKeys = ['id', 'type', 'team', 'pos', 'envState'];
+                            $copyKeys = ['id', 'label', 'type', 'team', 'pos', 'envState'];
                             $copyUnit = [];
                             foreach ($copyKeys as $key) {
                                 $copyUnit[$key] = $unit[$key] ?? null;
