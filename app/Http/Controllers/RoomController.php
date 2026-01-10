@@ -117,6 +117,7 @@ class RoomController extends Controller
 
         $snapshots = \App\Models\Snapshot::query()
             ->where('room_map_id', $roomMap->id)
+            ->orderBy('ingame_time', 'asc')
             ->get();
 
         $result = [];
