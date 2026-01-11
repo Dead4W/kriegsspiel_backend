@@ -32,7 +32,11 @@ Route::middleware(DisableCors::class)->group(function () {
             Route::put('', [\App\Http\Controllers\RoomController::class, 'create']);
             Route::prefix('{roomUuid}')->group(function() {
                 Route::get('', [\App\Http\Controllers\RoomController::class, 'get']);
-                Route::get('snapshots', [\App\Http\Controllers\RoomController::class, 'snapshots']);
+                Route::prefix('snapshots')->group(function() {
+                    Route::get('', [\App\Http\Controllers\RoomController::class, 'snapshots']);
+                    Route::get('{ingameTime}', [\App\Http\Controllers\RoomController::class, 'snapshot']);
+                    Route::get('chart', [\App\Http\Controllers\RoomController::class, 'snapshotsChart']);
+                });
             });
         });
     });

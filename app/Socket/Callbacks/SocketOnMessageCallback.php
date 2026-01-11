@@ -221,13 +221,25 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                         $directViewUuids = [];
                         $roomMapTeamUnits = $roomMapTeam->units;
+                        foreach ($roomMapTeamUnits as $unitUuid => $unit) {
+                            if ($unit['directView'] && $unit['team'] !== $message['team']) {
+                                unset($roomMapTeamUnits[$unitUuid]);
+                            }
+                        }
                         foreach ($message['data'] as $messageData) {
                             $directViewUuids[] = $messageData['id'];
-                            $roomMapTeamUnits[$messageData['id']]['pos'] = $messageData['pos'];
-                            $roomMapTeamUnits[$messageData['id']]['hp'] = $messageData['hp'];
+                            if (isset($roomMapTeamUnits[$messageData['id']])) {
+                                foreach ($messageData as $unitKey => $unitValue) {
+                                    $roomMapTeamUnits[$messageData['id']][$unitKey] = $unitValue;
+                                }
+                            } else {
+                                $roomMapTeamUnits[$messageData['id']] = $messageData;
+                            }
                         }
                         foreach ($roomMapTeamUnits as &$roomMapTeamUnit) {
-                            $roomMapTeamUnit['directView'] = in_array($roomMapTeamUnit['id'], $directViewUuids);
+                            if (isset($roomMapTeamUnit['id'])) {
+                                $roomMapTeamUnit['directView'] = in_array($roomMapTeamUnit['id'], $directViewUuids);
+                            }
                         }
                         $roomMapTeam->units = $roomMapTeamUnits;
                         $roomMapTeam->save();

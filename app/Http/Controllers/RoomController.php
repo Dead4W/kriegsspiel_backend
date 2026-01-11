@@ -118,13 +118,101 @@ class RoomController extends Controller
         $snapshots = \App\Models\Snapshot::query()
             ->where('room_map_id', $roomMap->id)
             ->orderBy('ingame_time', 'asc')
-            ->get();
+            ->pluck('ingame_time');
+
+        return response()->json($snapshots);
+    }
+
+    public function snapshot(Request $request, string $roomUuid, string $ingameTime): JsonResponse {
+        $data = $request->validate([
+            'key' => ['required', 'string', 'max:255'],
+        ]);
+
+        $room = Room::query()
+            ->where('uuid', $roomUuid)
+            ->first();
+
+        if (!$room) {
+            return response()->json([
+                'message' => 'room_not_found',
+            ], 404);
+        }
+
+        if ($data['key'] !== $room->admin_key) {
+            return response()->json([
+                'message' => 'wrong_key',
+            ], 403);
+        }
+
+        $roomMap = \App\Models\RoomMap::query()
+            ->where('room_id', $room->id)
+            ->where('team', \App\Enums\TeamEnum::ADMIN)
+            ->firstOrFail();
+
+        $snapshot = \App\Models\Snapshot::query()
+            ->where('room_map_id', $roomMap->id)
+            ->where('ingame_time', $ingameTime)
+            ->first();
+
+        if (!$snapshot) {
+            return response()->json([
+                'message' => 'snapshot_not_found',
+            ], 404);
+        }
+
+        return response()->json([
+            'units' => $snapshot->units,
+            'paint' => $snapshot->paint,
+        ]);
+    }
+
+    public function snapshotsChart(Request $request, string $roomUuid): JsonResponse {
+        $data = $request->validate([
+            'key' => ['required', 'string', 'max:255'],
+        ]);
+
+        $room = Room::query()
+            ->where('uuid', $roomUuid)
+            ->first();
+
+        if (!$room) {
+            return response()->json([
+                'message' => 'room_not_found',
+            ], 404);
+        }
+
+        if ($data['key'] !== $room->admin_key) {
+            return response()->json([
+                'message' => 'wrong_key',
+            ], 403);
+        }
+
+        $roomMap = \App\Models\RoomMap::query()
+            ->where('room_id', $room->id)
+            ->where('team', \App\Enums\TeamEnum::ADMIN)
+            ->firstOrFail();
+
+        $snapshots = \App\Models\Snapshot::query()
+            ->where('room_map_id', $roomMap->id)
+            ->orderBy('ingame_time', 'asc')
+            ->lazyById(10);
 
         $result = [];
         foreach ($snapshots as $snapshot) {
+            $hpRed = 0;
+            $hpBlue = 0;
+            foreach ($snapshot->units as $unit) {
+                if (!isset($unit['hp'])) continue;
+                if ($unit['team'] === 'red') {
+                    $hpRed += $unit['hp'];
+                } else {
+                    $hpBlue += $unit['hp'];
+                }
+            }
             $result[] = [
                 'ingame_time' => $snapshot->ingame_time,
-                'units' => $snapshot->units,
+                'blue' => $hpBlue,
+                'red' => $hpRed,
             ];
         }
 
