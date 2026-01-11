@@ -192,7 +192,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         }
 
                         $roomChat->ingame_time = $message['data']['time'];
-                        $roomChat->status = 'delivered';
+                        $roomChat->delivered = true;
                         $roomChat->save();
 
                         $chatMessages[] = [
@@ -279,7 +279,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $server->push($connectionId,  json_encode($data));
         }
         foreach ($chatMessages as $chatMessage) {
-            if ($chatMessage['data']['status'] === 'delivered') {
+            if ($chatMessage['data']['delivered'] ?? false) {
                 $connectionIds = GetOtherListenersAction::run($currentConnection, [
                     $chatMessage['data']['team'],
                 ]);

@@ -151,7 +151,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     ->where(function ($query) {
                         $query
                             ->where('author_team', '!=', \App\Enums\TeamEnum::ADMIN)
-                            ->orWhere('status', 'delivered');
+                            ->orWhere('delivered', '1');
                     })
             )
             ->where('room_id', $roomId)

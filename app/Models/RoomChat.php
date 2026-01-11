@@ -13,6 +13,7 @@ use \Illuminate\Database\Eloquent\Model;
  * @property TeamEnum $author_team
  * @property array $unitIds
  * @property string $status
+ * @property bool $delivered
  * @property TeamEnum $team
  * @property string $data
  * @property \Illuminate\Support\Carbon $ingame_time
@@ -33,6 +34,7 @@ use \Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereUnitIds($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereUuid($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereDelivered($value)
  * @mixin \Eloquent
  */
 class RoomChat extends Model
