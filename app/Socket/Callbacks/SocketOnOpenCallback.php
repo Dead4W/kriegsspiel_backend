@@ -119,6 +119,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 'stage' => $room->stage,
                 'options' => $room->options,
                 'name' => $room->name,
+                'weather' => $room->weather,
                 'ingame_time' => $room->ingame_time->format('Y-m-d H:i:s'),
             ],
         ];

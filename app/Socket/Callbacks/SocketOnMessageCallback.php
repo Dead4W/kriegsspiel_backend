@@ -40,18 +40,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
         $goodMessages = [];
         $chatMessages = [];
-        $timeMessages = [];
+        $allMessages = [];
         $selfMessages = [];
-        $directViewMessages = [];
+        $messagesByTeam = [];
 
         \Illuminate\Support\Facades\DB::transaction(function () use (
             $currentConnection,
             $decodedFrameData,
             &$goodMessages,
             &$chatMessages,
-            &$timeMessages,
+            &$allMessages,
             &$selfMessages,
-            &$directViewMessages,
+            &$messagesByTeam,
         ) {
             $room = \App\Models\Room::query()
                 ->where('id', $currentConnection->room_id)
@@ -121,7 +121,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $snapshot->ingame_time = $room->ingame_time;
                         $snapshot->save();
 
-                        $timeMessages[] = $message;
+                        $allMessages[] = $message;
                         continue;
                     } else if ($message['type'] === 'chat_read') {
                         if (!$message['data']) {
@@ -208,6 +208,36 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'status' => $roomChat->status,
                             ],
                         ];
+
+                        // Update stats
+                        if (isset($room->options['autoStatsUpdate'])) {
+                            $roomMapTeam = \App\Models\RoomMap::query()
+                                ->where('room_id', $currentConnection->room_id)
+                                ->where('team', $roomChat->team)
+                                ->first();
+
+                            if (!$roomMapTeam) {
+                                $this->error("Not found roomMap for team '{$message['team']}'");
+                                continue;
+                            }
+
+                            $roomMapTeamUnits = $roomMapTeam->units;
+                            foreach ($roomChat->unitIds as $unitId) {
+                                if (!isset($roomMapUnits[$unitId])) continue;
+                                if (!isset($roomMapTeamUnits[$unitId])) continue;
+                                $roomMapTeamUnits[$unitId]['hp'] = $roomMapUnits[$unitId]['hp'];
+                                $roomMapTeamUnits[$unitId]['ammo'] = $roomMapUnits[$unitId]['ammo'];
+                                $roomMapTeamUnits[$unitId]['pos'] = $roomMapUnits[$unitId]['pos'];
+                                $team = $roomMapUnits[$unitId]['team'];
+                                if (!isset($messagesByTeam[$team])) $messagesByTeam[$team] = [];
+                                $messagesByTeam[$team][] = [
+                                    'type' => 'unit',
+                                    'data' => $roomMapTeamUnits[$unitId],
+                                ];
+                            }
+                            $roomMapTeam->units = $roomMapTeamUnits;
+                            $roomMapTeam->save();
+                        }
                     } else if ($message['type'] === 'direct_view') {
                         $roomMapTeam = \App\Models\RoomMap::query()
                             ->where('room_id', $currentConnection->room_id)
@@ -243,8 +273,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         }
                         $roomMapTeam->units = $roomMapTeamUnits;
                         $roomMapTeam->save();
-                        $directViewMessages[] = $message;
+                        if (!isset($messagesByTeam[$message['team']])) $messagesByTeam[$message['team']] = [];
+                        $messagesByTeam[$message['team']][] = $message;
                         continue;
+                    } else if ($message['type'] === 'weather') {
+                        $room->weather = $message['data'];
+                        $allMessages[] = $message;
                     } else {
                         $this->error("Invalid message type '{$message['type']}' for team '{$currentConnection->team}'");
                         continue;
@@ -307,18 +341,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         ]);
         $data = [
             'type' => 'messages',
-            'messages' => $timeMessages,
+            'messages' => $allMessages,
         ];
         foreach ($connectionIds as $connectionId) {
             $server->push($connectionId,  json_encode($data));
         }
 
-        foreach ($directViewMessages as $directViewMessage) {
-            $connectionIds = GetOtherListenersAction::run($currentConnection, [$directViewMessage['team']]);
+        foreach ($messagesByTeam as $team => $messages) {
+            $connectionIds = GetOtherListenersAction::run($currentConnection, [$team]);
             foreach ($connectionIds as $connectionId) {
                 $server->push($connectionId,  json_encode([
                     'type' => 'messages',
-                    'messages' => [$directViewMessage],
+                    'messages' => $messages,
                 ]));
             }
         }

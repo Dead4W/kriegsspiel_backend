@@ -40,6 +40,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereRedKey($value)
  * @property string $red_key
  * @property string $blue_key
+ * @property string $weather
+ * @method static \Illuminate\Database\Eloquent\Builder|Room whereWeather($value)
  * @mixin \Eloquent
  */
 class Room extends Model
