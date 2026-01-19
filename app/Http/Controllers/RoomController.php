@@ -15,6 +15,7 @@ class RoomController extends Controller
             'name'      => 'required|string|max:255',
             'password'  => 'nullable|string|max:255',
             'options'   => 'required|array',
+            'time'      => 'required|string|date_format:Y-m-d H:i:s',
         ]);
 
         /** @var User $user */
@@ -22,6 +23,7 @@ class RoomController extends Controller
 
         $room = new Room();
         $room->uuid = Str::uuid()->toString();
+        $room->ingame_time = $data['time'];
         $room->stage = 'planning';
         $room->name = $data['name'];
         $room->password = $data['password'] ?? '';
