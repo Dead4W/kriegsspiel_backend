@@ -114,12 +114,11 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     if ($message['type'] === 'skip_time') {
                         $room->ingame_time = Carbon::createFromFormat('Y-m-d H:i:s', $message['data']);
 
-                        $snapshot = new \App\Models\Snapshot();
-                        $snapshot->room_map_id = $roomMap->id;
-                        $snapshot->units = $roomMapUnits;
-                        $snapshot->paint = $roomMap->paint;
-                        $snapshot->ingame_time = $room->ingame_time;
-                        $snapshot->save();
+                        \App\Socket\Actions\SnapshotBoardAction::run(
+                            $room,
+                            $roomMap,
+                            $roomMapUnits,
+                        );
 
                         $allMessages[] = $message;
                         continue;
@@ -135,51 +134,38 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'status' => 'read',
                             ]);
                     } else if ($message['type'] === 'set_stage') {
-                        if ($room->stage === 'planning' && $message['data'] === 'war') {
-                            $room->stage = $message['data'];
-                        } else if ($room->stage === 'war' && $message['data'] === 'end') {
-                            $room->stage = $message['data'];
-                        } else {
-                            $this->error("Invalid stage value '{$message['data']}'");
-                            // bad stage
-                            continue;
-                        }
-                    } else if ($message['type'] === 'copy_board') {
-                        if (!in_array($message['data'], [TeamEnum::RED->value, TeamEnum::BLUE->value])) {
-                            // bad team
-                            $this->error("Invalid team value '{$message['data']}'");
-                            continue;
-                        }
-
-                        $roomMapOtherTeam = \App\Models\RoomMap::query()
-                            ->where('room_id', $currentConnection->room_id)
-                            ->where('team', $message['data'])
-                            ->firstOrFail();
-                        $this->error("Test map other team");
-
-                        if (!$roomMapOtherTeam) {
-                            $this->error("Not found map for team '{$message['data']}'");
-                            continue;
-                        }
-
-                        $otherTeamUnits = $roomMapOtherTeam->units;
-                        $otherTeamUnits = array_filter($otherTeamUnits, function ($unit) use ($message) {
-                            return $unit['team'] && $unit['team'] === $message['data'];
-                        });
-                        foreach ($otherTeamUnits as $unitUuid => $unit) {
-                            $copyKeys = ['id', 'label', 'type', 'team', 'pos', 'envState'];
-                            $copyUnit = [];
-                            foreach ($copyKeys as $key) {
-                                $copyUnit[$key] = $unit[$key] ?? null;
+                        if ($room->stage !== $message['data']) {
+                            if ($room->stage === 'planning' && $message['data'] === 'war') {
+                                $room->stage = $message['data'];
+                            } else if ($room->stage === 'war' && $message['data'] === 'end') {
+                                $room->stage = $message['data'];
+                            } else {
+                                $this->error("Invalid stage value '{$message['data']}'");
+                                // bad stage
+                                continue;
                             }
-                            $roomMapUnits[$unitUuid] = $copyUnit;
-                            $selfMessages[] = [
-                                'type' => 'unit',
-                                'data' => $copyUnit,
-                                'frames' => [],
-                            ];
+
+                            if ($message['data'] === 'war') {
+                                \App\Socket\Actions\CopyBoardAction::run(
+                                    $currentConnection,
+                                    TeamEnum::BLUE,
+                                    $roomMapUnits,
+                                    $selfMessages
+                                );
+                                \App\Socket\Actions\CopyBoardAction::run(
+                                    $currentConnection,
+                                    TeamEnum::RED,
+                                    $roomMapUnits,
+                                    $selfMessages
+                                );
+
+                                \App\Socket\Actions\SnapshotBoardAction::run(
+                                    $room,
+                                    $roomMap,
+                                    $roomMapUnits,
+                                );
+                            }
                         }
-                        continue;
                     } else if ($message['type'] === 'messenger_delivery') {
                         $roomChat = \App\Models\RoomChat::query()
                             ->where('room_id', $room->id)

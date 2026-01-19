@@ -42,6 +42,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $blue_key
  * @property string $weather
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereWeather($value)
+ * @property string $map_url
+ * @property string $height_map_url
+ * @method static \Illuminate\Database\Eloquent\Builder|Room whereHeightMapUrl($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|Room whereMapUrl($value)
  * @mixin \Eloquent
  */
 class Room extends Model
