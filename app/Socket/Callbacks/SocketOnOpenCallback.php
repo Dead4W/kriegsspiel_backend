@@ -20,7 +20,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
 
         $connectionId = $request->fd;
         $roomUuid = $request->get['room_id'] ?? '';
-        $password = $request->get['password'];
+        $password = $request->get['password'] ?? '';
         $key = $request->get['key'];
 
         $room = \App\Models\Room::query()
