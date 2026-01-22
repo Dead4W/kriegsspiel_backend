@@ -11,8 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $uuid
  * @property string $password
  * @property string $admin_key
- * * @property string $red_key
- * * @property string $blue_key
+ * @property string $red_key
+ * @property string $blue_key
  * @property array $options
  * @property string $name
  * @property \Illuminate\Support\Carbon $ingame_time
@@ -38,8 +38,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereAdminKey($value)
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereBlueKey($value)
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereRedKey($value)
- * @property string $red_key
- * @property string $blue_key
  * @property string $weather
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereWeather($value)
  * @property string $map_url

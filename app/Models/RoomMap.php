@@ -11,6 +11,7 @@ use \Illuminate\Database\Eloquent\Model;
  * @property TeamEnum $team
  * @property array $units
  * @property array $paint
+ * @property array $logs
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap newModelQuery()
@@ -23,6 +24,7 @@ use \Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereTeam($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereUnits($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereUpdatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereLogs($value)
  * @mixin \Eloquent
  */
 class RoomMap extends Model
@@ -32,11 +34,13 @@ class RoomMap extends Model
         'team',
         'units',
         'paint',
+        'logs',
     ];
 
     protected $casts = [
         'units' => 'array',
         'paint' => 'array',
+        'logs' => 'array',
         'team' => TeamEnum::class,
     ];
 }

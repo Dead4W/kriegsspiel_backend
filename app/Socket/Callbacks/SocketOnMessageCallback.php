@@ -71,6 +71,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 ->where('team', $currentConnection->team)
                 ->firstOrFail();
             $roomMapUnits = $roomMap->units ?? [];
+            $roomMapLogs = $roomMap->logs ?? [];
             foreach ($decodedFrameData['messages'] as $message) {
                 if ($message['type'] === 'unit') {
                     $unitUuid = $message['data']['id'];
@@ -118,6 +119,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $room,
                             $roomMap,
                             $roomMapUnits,
+                            $roomMapLogs,
                         );
 
                         $allMessages[] = $message;
@@ -163,6 +165,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     $room,
                                     $roomMap,
                                     $roomMapUnits,
+                                    $roomMapLogs,
                                 );
                             }
                         }
@@ -265,6 +268,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     } else if ($message['type'] === 'weather') {
                         $room->weather = $message['data'];
                         $allMessages[] = $message;
+                    } else if ($message['type'] === 'log') {
+                        $logId = $message['data']['id'];
+                        $message['data']['is_new'] = false;
+                        $roomMapLogs[$logId] = $message['data'];
                     } else {
                         $this->error("Invalid message type '{$message['type']}' for team '{$currentConnection->team}'");
                         continue;
@@ -282,6 +289,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
             $room->save();
             $roomMap->units = $roomMapUnits;
+            $roomMap->logs = $roomMapLogs;
             $roomMap->save();
         });
 
