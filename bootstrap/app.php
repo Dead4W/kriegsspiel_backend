@@ -41,6 +41,10 @@ $app->singleton(
     App\Exceptions\Handler::class
 );
 
+if (config('sentry.dsn')) {
+    $app->register(Sentry\Laravel\ServiceProvider::class);
+}
+
 /*
 |--------------------------------------------------------------------------
 | Return The Application
