@@ -40,4 +40,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN npm init -y \
     && npm install chokidar
 
+# Excimer (for Sentry profiling)
+RUN pecl install excimer \
+    && docker-php-ext-enable excimer
+
 CMD ["/usr/bin/supervisord", "-n"]
