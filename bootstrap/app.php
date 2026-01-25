@@ -41,8 +41,6 @@ $app->singleton(
     App\Exceptions\Handler::class
 );
 
-$app->register(Sentry\Laravel\ServiceProvider::class);
-
 /*
 |--------------------------------------------------------------------------
 | Return The Application
