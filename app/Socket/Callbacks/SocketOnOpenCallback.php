@@ -144,12 +144,12 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             ];
         }
 
-        foreach ($roomMap->logs as $log) {
-            yield [
-                'type' => 'log',
-                'data' => $log,
-            ];
-        }
+//        foreach ($roomMap->logs as $log) {
+//            yield [
+//                'type' => 'log',
+//                'data' => $log,
+//            ];
+//        }
 
         $chatMessages = \App\Models\RoomChat::query()
             ->when(

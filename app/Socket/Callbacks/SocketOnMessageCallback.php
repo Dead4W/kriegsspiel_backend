@@ -269,9 +269,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $room->weather = $message['data'];
                         $allMessages[] = $message;
                     } else if ($message['type'] === 'log') {
-                        $logId = $message['data']['id'];
+//                        $logId = $message['data']['id'];
                         $message['data']['is_new'] = false;
-                        $roomMapLogs[$logId] = $message['data'];
+//                        $roomMapLogs[$logId] = $message['data'];
                     } else {
                         $this->error("Invalid message type '{$message['type']}' for team '{$currentConnection->team}'");
                         continue;
