@@ -72,6 +72,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 ->firstOrFail();
             $roomMapUnits = $roomMap->units ?? [];
             $roomMapLogs = $roomMap->logs ?? [];
+            $roomMapPaint = $roomMap->paint ?? [];
             foreach ($decodedFrameData['messages'] as $message) {
                 if ($message['type'] === 'unit') {
                     $unitUuid = $message['data']['id'];
@@ -81,14 +82,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     foreach ($message['data'] as $unitUuid) {
                         unset($roomMapUnits[$unitUuid]);
                     }
-                } elseif ($message['type'] === 'paint') {
-                    $paint = $roomMap->paint ?? [];
-
-                    foreach ($message['pos_list'] as $pos) {
-                        $paint[$pos] = 1;
-                    }
-
-                    $roomMap->paint = $paint;
+                } elseif ($message['type'] === 'paint_add') {
+                    $paintData = $message['data'];
+                    $roomMapPaint[$paintData['id']] = $paintData;
+                } elseif ($message['type'] === 'paint_undo') {
+                    $id = $message['data']['id'];
+                    unset($roomMapPaint[$id]);
                 } elseif ($message['type'] === 'chat') {
                     $roomChat = new \App\Models\RoomChat();
                     $roomChat->uuid = $message['data']['id'];
@@ -109,7 +108,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $chatMessages[] = $message;
                     }
                     continue;
-                } elseif ($message['type'] === 'cursor') {
+                } elseif ($message['type'] === 'cursor' || $message['type'] === 'ruler') {
                     // pass backend
                 } elseif ($currentConnection->team === TeamEnum::ADMIN) {
                     if ($message['type'] === 'skip_time') {
@@ -290,6 +289,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $room->save();
             $roomMap->units = $roomMapUnits;
             $roomMap->logs = $roomMapLogs;
+            $roomMap->paint = $roomMapPaint;
             $roomMap->save();
         });
 

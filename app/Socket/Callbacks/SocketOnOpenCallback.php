@@ -139,8 +139,8 @@ class SocketOnOpenCallback extends AbstractSocketCallback
 
         foreach ($roomMap->paint as $paint) {
             yield [
-                'type' => 'paint',
-                'pos' => array_keys($paint),
+                'type' => 'paint_add',
+                'data' => $paint,
             ];
         }
 
