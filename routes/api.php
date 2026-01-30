@@ -20,6 +20,10 @@ use Illuminate\Support\Facades\Route;
 //});
 
 Route::middleware(DisableCors::class)->group(function () {
+    Route::middleware([
+        DisableCors::class,
+    ])->get('proxy/image', [\App\Http\Controllers\ProxyController::class, 'image']);
+
     Route::post('user/register', [\App\Http\Controllers\UserController::class, 'create']);
 
     Route::middleware([

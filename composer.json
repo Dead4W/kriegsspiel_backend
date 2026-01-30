@@ -12,7 +12,8 @@
         "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.8",
         "openswoole/core": "^22.1",
-        "sentry/sentry-laravel": "^4.20"
+        "sentry/sentry-laravel": "^4.20",
+        "ext-curl": "*"
     },
     "require-dev": {
         "barryvdh/laravel-ide-helper": "^3.1",
