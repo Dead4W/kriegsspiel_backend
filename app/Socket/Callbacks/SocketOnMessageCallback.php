@@ -119,6 +119,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $roomMap,
                             $roomMapUnits,
                             $roomMapLogs,
+                            $roomMapPaint,
                         );
 
                         $allMessages[] = $message;
@@ -165,6 +166,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     $roomMap,
                                     $roomMapUnits,
                                     $roomMapLogs,
+                                    $roomMapPaint,
                                 );
                             }
                         }
