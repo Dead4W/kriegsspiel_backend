@@ -34,7 +34,9 @@ Route::middleware(DisableCors::class)->group(function () {
 
         Route::prefix('room')->group(function() {
             Route::put('', [\App\Http\Controllers\RoomController::class, 'create']);
-            Route::prefix('{roomUuid}')->group(function() {
+            Route::prefix('{roomUuid}')
+                ->whereUuid('roomUuid')
+                ->group(function() {
                 Route::get('', [\App\Http\Controllers\RoomController::class, 'get']);
                 Route::get('snapshotsChart', [\App\Http\Controllers\RoomController::class, 'snapshotsChart']);
                 Route::prefix('snapshots')->group(function() {

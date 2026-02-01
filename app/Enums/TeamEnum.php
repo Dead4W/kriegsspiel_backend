@@ -8,4 +8,5 @@ enum TeamEnum: string
     case SPECTATOR = 'spectator';
     case BLUE = 'blue';
     case RED = 'red';
+    case WHITE = 'white';
 }
