@@ -24,7 +24,7 @@ class CopyBoardAction
             return $unit['team'] && $unit['team'] === $team->value;
         });
         foreach ($otherTeamUnits as $unitUuid => $unit) {
-            $copyKeys = ['id', 'type', 'team', 'pos', 'label', 'envState', 'hp', 'ammo'];
+            $copyKeys = ['id', 'type', 'team', 'pos', 'label', 'envState', 'hp', 'ammo', 'messagesLinked'];
             $copyUnit = [];
             foreach ($copyKeys as $key) {
                 $copyUnit[$key] = $unit[$key] ?? null;
