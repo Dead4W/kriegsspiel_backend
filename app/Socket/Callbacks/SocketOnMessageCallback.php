@@ -108,7 +108,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $chatMessages[] = $message;
                     }
                     continue;
-                } elseif ($message['type'] === 'cursor' || $message['type'] === 'ruler') {
+                } elseif ($message['type'] === 'cursor') {
+                    if (in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED])) {
+                        // Send to admin/spectator
+                        $messagesByTeam[TeamEnum::ADMIN->value][] = $message;
+                        $messagesByTeam[TeamEnum::SPECTATOR->value][] = $message;
+                    }
+                } else if ($message['type'] === 'ruler') {
                     // pass backend
                 } elseif ($currentConnection->team === TeamEnum::ADMIN) {
                     if ($message['type'] === 'skip_time') {
@@ -181,6 +187,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             continue;
                         }
 
+                        $messageCreated = $roomChat->ingame_time->clone();
+
                         $roomChat->ingame_time = $message['data']['time'];
                         $roomChat->delivered = true;
                         $roomChat->save();
@@ -201,11 +209,20 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                         // Update stats
                         if (isset($room->options['autoStatsUpdate'])) {
+                            $snapshotRoomMapAdmin = \App\Models\Snapshot::query()
+                                ->where('room_map_id', $roomMap->id)
+                                ->where('ingame_time', $messageCreated)
+                                ->first();
+                            if (!$snapshotRoomMapAdmin) {
+                                $this->error("Not found snapshot roomMap for team '$messageCreated");
+                                continue;
+                            }
+                            $snapshotRoomMapAdminUnits = $snapshotRoomMapAdmin->units;
+
                             $roomMapTeam = \App\Models\RoomMap::query()
                                 ->where('room_id', $currentConnection->room_id)
                                 ->where('team', $roomChat->team)
                                 ->first();
-
                             if (!$roomMapTeam) {
                                 $this->error("Not found roomMap for team '{$message['team']}'");
                                 continue;
@@ -213,12 +230,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                             $roomMapTeamUnits = $roomMapTeam->units;
                             foreach ($roomChat->unitIds as $unitId) {
-                                if (!isset($roomMapUnits[$unitId])) continue;
+                                if (!isset($snapshotRoomMapAdminUnits[$unitId])) continue;
                                 if (!isset($roomMapTeamUnits[$unitId])) continue;
-                                $roomMapTeamUnits[$unitId]['hp'] = $roomMapUnits[$unitId]['hp'];
-                                $roomMapTeamUnits[$unitId]['ammo'] = $roomMapUnits[$unitId]['ammo'];
-                                $roomMapTeamUnits[$unitId]['pos'] = $roomMapUnits[$unitId]['pos'];
-                                $team = $roomMapUnits[$unitId]['team'];
+                                $roomMapTeamUnits[$unitId]['hp'] = $snapshotRoomMapAdminUnits[$unitId]['hp'];
+                                $roomMapTeamUnits[$unitId]['ammo'] = $snapshotRoomMapAdminUnits[$unitId]['ammo'];
+                                $roomMapTeamUnits[$unitId]['pos'] = $snapshotRoomMapAdminUnits[$unitId]['pos'];
+                                $team = $snapshotRoomMapAdminUnits[$unitId]['team'];
                                 if (!isset($messagesByTeam[$team])) $messagesByTeam[$team] = [];
                                 $messagesByTeam[$team][] = [
                                     'type' => 'unit',
