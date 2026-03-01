@@ -210,10 +210,10 @@ class RoomController extends Controller
                 if ($unit['type'] === 'messenger') continue;
                 if ($unit['team'] === 'red') {
                     $hpRed += $unit['hp'];
-                    if ($unit['hp'] > 0 && $unit['isRetreat']) $unitsRed++;
+                    if ($unit['hp'] > 0 && !$unit['isRetreat']) $unitsRed++;
                 } else if ($unit['team'] === 'blue') {
                     $hpBlue += $unit['hp'];
-                    if ($unit['hp'] > 0 && $unit['isRetreat']) $unitsBlue++;
+                    if ($unit['hp'] > 0 && !$unit['isRetreat']) $unitsBlue++;
                 }
             }
             $result[] = [
