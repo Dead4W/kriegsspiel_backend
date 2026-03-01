@@ -312,19 +312,24 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $roomMap->save();
         });
 
-        $server->push($currentConnection->id,  json_encode([
-            'type' => 'messages',
-            'messages' => $selfMessages,
-        ]));
+        if ($selfMessages) {
+            $server->push($currentConnection->id,  json_encode([
+                'type' => 'messages',
+                'messages' => $selfMessages,
+            ]));
+        }
 
         $data = [
             'type' => 'messages',
             'messages' => array_merge($goodMessages, $selfMessages),
         ];
-        $connectionIds = GetOtherListenersAction::run($currentConnection);
-        foreach ($connectionIds as $connectionId) {
-            $server->push($connectionId,  json_encode($data));
+        if ($data['messages']) {
+            $connectionIds = GetOtherListenersAction::run($currentConnection);
+            foreach ($connectionIds as $connectionId) {
+                $server->push($connectionId,  json_encode($data));
+            }
         }
+
         foreach ($chatMessages as $chatMessage) {
             if ($chatMessage['data']['delivered'] ?? false) {
                 $connectionIds = GetOtherListenersAction::run($currentConnection, [
@@ -352,18 +357,21 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             TeamEnum::BLUE,
             TeamEnum::RED,
         ]);
-        $data = [
-            'type' => 'messages',
-            'messages' => $allMessages,
-        ];
-        foreach ($connectionIds as $connectionId) {
-            $server->push($connectionId,  json_encode($data));
+        if ($allMessages) {
+            $data = [
+                'type' => 'messages',
+                'messages' => $allMessages,
+            ];
+            foreach ($connectionIds as $connectionId) {
+                $server->push($connectionId,  json_encode($data));
+            }
         }
 
         foreach ($messagesByTeam as $team => $messages) {
+            if (!$messages) continue;
             $connectionIds = GetOtherListenersAction::run($currentConnection, [$team]);
             foreach ($connectionIds as $connectionId) {
-                $server->push($connectionId,  json_encode([
+                $server->push($connectionId, json_encode([
                     'type' => 'messages',
                     'messages' => $messages,
                 ]));
