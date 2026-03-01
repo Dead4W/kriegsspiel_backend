@@ -25,7 +25,7 @@ RUN docker-php-ext-configure pcntl \
         zip
 
 # OpenSwoole
-RUN pecl install -f -D 'enable-openssl="no" enable-http2="no" enable-mysqlnd="no" enable-hook-curl="no"' openswoole \
+RUN pecl install -f -D 'enable-openssl="no" enable-http2="no" enable-mysqlnd="no" enable-hook-curl="no"' openswoole-25.2.0 \
     && docker-php-ext-enable openswoole
 
 # Composer

@@ -355,17 +355,17 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             }
         }
 
-        $connectionIds = GetOtherListenersAction::run($currentConnection, [
-            TeamEnum::SPECTATOR,
-            TeamEnum::ADMIN,
-            TeamEnum::BLUE,
-            TeamEnum::RED,
-        ]);
         if ($allMessages) {
             $data = [
                 'type' => 'messages',
                 'messages' => $allMessages,
             ];
+            $connectionIds = GetOtherListenersAction::run($currentConnection, [
+                TeamEnum::SPECTATOR,
+                TeamEnum::ADMIN,
+                TeamEnum::BLUE,
+                TeamEnum::RED,
+            ]);
             foreach ($connectionIds as $connectionId) {
                 $server->push($connectionId,  json_encode($data));
             }

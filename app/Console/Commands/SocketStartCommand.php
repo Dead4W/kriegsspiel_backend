@@ -42,7 +42,7 @@ class SocketStartCommand extends Command
 
             'package_max_length' => 64 * 1024 * 1024,
 
-            'websocket_compression' => true,
+//            'websocket_compression' => true,
         ]);
 
         $server->on("Start", new SocketOnStartCallback($this->output));

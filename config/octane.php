@@ -42,6 +42,9 @@ return [
     'swoole' => [
         'options' => [
             'package_max_length' => 100 * 1024 * 1024, // 100 MB
+
+            'worker_num' => 1,
+            'task_worker_num' => 0,
         ],
     ],
 
@@ -110,8 +113,8 @@ return [
         OperationTerminated::class => [
             FlushOnce::class,
             FlushTemporaryContainerInstances::class,
-            // DisconnectFromDatabases::class,
-            // CollectGarbage::class,
+            DisconnectFromDatabases::class,
+            CollectGarbage::class,
         ],
 
         WorkerErrorOccurred::class => [
@@ -155,10 +158,10 @@ return [
     */
 
     'tables' => [
-        'example:1000' => [
-            'name' => 'string:1000',
-            'votes' => 'int',
-        ],
+//        'example:1000' => [
+//            'name' => 'string:1000',
+//            'votes' => 'int',
+//        ],
     ],
 
     /*
