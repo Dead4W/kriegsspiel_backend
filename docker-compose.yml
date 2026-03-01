@@ -41,7 +41,7 @@ services:
         ports:
             - "80:80"
 
-    php:
+    php_kriegspiel:
         build: .docker/php
         restart: unless-stopped
         working_dir: /app
