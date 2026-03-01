@@ -129,6 +129,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         );
 
                         $allMessages[] = $message;
+                        $selfMessages[] = [
+                            'type' => 'skip_time_success',
+                            'data' => true,
+                        ];
                         continue;
                     } else if ($message['type'] === 'chat_read') {
                         if (!$message['data']) {
