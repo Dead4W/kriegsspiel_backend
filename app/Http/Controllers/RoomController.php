@@ -208,7 +208,7 @@ class RoomController extends Controller
                 if ($unit['type'] === 'messenger') continue;
                 if ($unit['team'] === 'red') {
                     $hpRed += $unit['hp'];
-                } else {
+                } else if ($unit['team'] === 'blue') {
                     $hpBlue += $unit['hp'];
                 }
             }
