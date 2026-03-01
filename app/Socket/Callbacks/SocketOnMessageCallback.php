@@ -208,7 +208,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         ];
 
                         // Update stats
-                        if (isset($room->options['autoStatsUpdate'])) {
+                        if (isset($room->options['autoStatsUpdate']) && $room->options['autoStatsUpdate']) {
                             $snapshotRoomMapAdmin = \App\Models\Snapshot::query()
                                 ->where('room_map_id', $roomMap->id)
                                 ->where('ingame_time', $messageCreated)
