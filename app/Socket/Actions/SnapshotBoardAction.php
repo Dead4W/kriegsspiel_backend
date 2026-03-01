@@ -14,8 +14,8 @@ class SnapshotBoardAction
         $snapshot = new \App\Models\Snapshot();
         $snapshot->room_map_id = $roomMap->id;
         $snapshot->units = $units;
-        $snapshot->paint = $paint;
-        $snapshot->logs = $logs;
+        $snapshot->paint = [];
+        $snapshot->logs = [];
         $snapshot->ingame_time = $room->ingame_time;
         $snapshot->save();
     }
