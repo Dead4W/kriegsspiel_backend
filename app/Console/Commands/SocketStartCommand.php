@@ -34,7 +34,6 @@ class SocketStartCommand extends Command
         $server->set([
             'input_buffer_size' => 64 * 1024 * 1024,
             'buffer_output_size' => 64 * 1024 * 1024,
-//            'pipe_buffer_size' => 64 * 1024 * 1024,
             'socket_buffer_size' => 128 * 1024 *1024,
 
             'kernel_socket_send_buffer_size' => 64 * 1024 * 1024,
@@ -42,7 +41,7 @@ class SocketStartCommand extends Command
 
             'package_max_length' => 64 * 1024 * 1024,
 
-//            'websocket_compression' => true,
+            'websocket_compression' => true,
         ]);
 
         $server->on("Start", new SocketOnStartCallback($this->output));
