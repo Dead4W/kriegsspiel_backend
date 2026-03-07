@@ -1,0 +1,65 @@
+networks:
+    proxy:
+        external: true
+        name: proxy
+    internal:
+        name: internal
+
+services:
+    db_kriegspiel:
+        image: postgres
+        restart: unless-stopped
+        environment:
+            - POSTGRES_PASSWORD=${DB_PASSWORD}
+            - POSTGRES_USER=${DB_USERNAME}
+            - POSTGRES_DB=${DB_DATABASE}
+        networks:
+            - internal
+        volumes:
+            - ./.docker/pg_data:/var/lib/postgresql/data
+        ports:
+            - "15461:5432"
+
+    nginx:
+        image: nginx:alpine
+        restart: unless-stopped
+        working_dir: /app
+        volumes:
+            - ./app:/app
+            - ./.docker/nginx/conf/nginx.conf:/etc/nginx/conf/nginx.conf:ro
+            - ./.docker/nginx/conf.d:/etc/nginx/conf.d:ro
+        networks:
+            - internal
+            - proxy
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.kr_backend.rule=Host(`backend.kriegsspiel.io`)
+            - traefik.http.routers.kr_backend.entrypoints=https
+            - traefik.http.routers.kr_backend.tls=true
+            - traefik.http.routers.kr_backend.tls.certresolver=letsencrypt
+            - traefik.docker.network=proxy
+        depends_on:
+            - db_kriegspiel
+
+    php_kriegspiel:
+        build: .docker/php
+        restart: unless-stopped
+        working_dir: /app
+        volumes:
+            - ./:/app
+            - ./.docker/php/php-ini-overrides.ini:/usr/local/etc/php/conf.d/99-overrides.ini:ro
+            - ./.docker/php/php.ini:/usr/local/etc/php/php.ini
+            - ./.docker/php/supervisord.conf:/etc/supervisor/conf.d/supervisor.conf:ro
+        networks:
+            - internal
+            - proxy
+        depends_on:
+            - db_kriegspiel
+        labels:
+            - traefik.enable=true
+            - traefik.http.routers.kr_socket.rule=Host(`socket.kriegsspiel.io`)
+            - traefik.http.routers.kr_socket.entrypoints=https
+            - traefik.http.routers.kr_socket.tls=true
+            - traefik.http.routers.kr_socket.tls.certresolver=letsencrypt
+            - traefik.http.services.kr_socket.loadbalancer.server.port=9501
+            - traefik.docker.network=proxy
