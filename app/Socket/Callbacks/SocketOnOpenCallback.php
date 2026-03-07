@@ -15,7 +15,38 @@ use OpenSwoole\WebSocket\Server;
 class SocketOnOpenCallback extends AbstractSocketCallback
 {
 
-    public function __invoke(Server $server, Request $request) {
+    protected function sentryTransactionName(...$args): string
+    {
+        return 'socket.open';
+    }
+
+    protected function sentryTransactionOp(...$args): string
+    {
+        return 'socket.open';
+    }
+
+    protected function sentryConfigureScope(...$args): void
+    {
+        parent::sentryConfigureScope(...$args);
+
+        /** @var Request $request */
+        $request = $args[1];
+
+        \Sentry\configureScope(static function (\Sentry\State\Scope $scope) use ($request): void {
+            $scope->setTag('socket.event', 'Open');
+            $scope->setContext('socket', [
+                'fd' => $request->fd,
+            ]);
+        });
+    }
+
+    protected function run(...$args): void
+    {
+        /** @var Server $server */
+        $server = $args[0];
+        /** @var Request $request */
+        $request = $args[1];
+
         $this->info("Received connection");
 
         $connectionId = $request->fd;

@@ -9,7 +9,37 @@ use OpenSwoole\WebSocket\Server;
 class SocketOnCloseCallback extends AbstractSocketCallback
 {
 
-    public function __invoke(Server $server, int $fd) {
+    protected function sentryTransactionName(...$args): string
+    {
+        return 'socket.close';
+    }
+
+    protected function sentryTransactionOp(...$args): string
+    {
+        return 'socket.close';
+    }
+
+    protected function sentryConfigureScope(...$args): void
+    {
+        parent::sentryConfigureScope(...$args);
+
+        $fd = $args[1] ?? null;
+
+        \Sentry\configureScope(static function (\Sentry\State\Scope $scope) use ($fd): void {
+            $scope->setTag('socket.event', 'Close');
+            $scope->setContext('socket', [
+                'fd' => $fd,
+            ]);
+        });
+    }
+
+    protected function run(...$args): void
+    {
+        /** @var Server $server */
+        $server = $args[0];
+        /** @var int $fd */
+        $fd = $args[1];
+
         $currentConnection = Connection::query()
             ->where('id', $fd)
             ->first();

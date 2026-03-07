@@ -10,7 +10,37 @@ use OpenSwoole\WebSocket\Server;
 class SocketOnStartCallback extends AbstractSocketCallback
 {
 
-    public function __invoke(Server $server) {
+    protected function sentryTransactionName(...$args): string
+    {
+        return 'socket.start';
+    }
+
+    protected function sentryTransactionOp(...$args): string
+    {
+        return 'socket.start';
+    }
+
+    protected function sentryConfigureScope(...$args): void
+    {
+        parent::sentryConfigureScope(...$args);
+
+        /** @var Server $server */
+        $server = $args[0];
+
+        \Sentry\configureScope(static function (\Sentry\State\Scope $scope) use ($server): void {
+            $scope->setTag('socket.event', 'Start');
+            $scope->setContext('socket', [
+                'host' => $server->host,
+                'port' => $server->port,
+            ]);
+        });
+    }
+
+    protected function run(...$args): void
+    {
+        /** @var Server $server */
+        $server = $args[0];
+
         $this->info("Removing old connections...");
         Connection::query()
             ->withoutGlobalScopes()

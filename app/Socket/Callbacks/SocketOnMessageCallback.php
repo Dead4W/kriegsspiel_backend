@@ -10,11 +10,48 @@ use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
 use OpenSwoole\WebSocket\Frame;
 use OpenSwoole\WebSocket\Server;
+use Sentry\SentrySdk;
+use Sentry\Tracing\SpanStatus;
 
 class SocketOnMessageCallback extends AbstractSocketCallback
 {
 
-    public function __invoke(Server $server, Frame $frame) {
+    protected function sentryTransactionName(...$args): string
+    {
+        return 'socket.message';
+    }
+
+    protected function sentryTransactionOp(...$args): string
+    {
+        return 'socket.message';
+    }
+
+    protected function sentryConfigureScope(...$args): void
+    {
+        parent::sentryConfigureScope(...$args);
+
+        /** @var Frame $frame */
+        $frame = $args[1];
+
+        \Sentry\configureScope(static function (\Sentry\State\Scope $scope) use ($frame): void {
+            $scope->setTag('socket.event', 'Message');
+            $scope->setContext('socket', [
+                'fd' => $frame->fd,
+                'opcode' => $frame->opcode,
+                'fin' => $frame->finish,
+            ]);
+        });
+    }
+
+    protected function run(...$args): void
+    {
+        /** @var Server $server */
+        $server = $args[0];
+        /** @var Frame $frame */
+        $frame = $args[1];
+
+        $transaction = SentrySdk::getCurrentHub()->getSpan();
+
         /** @var Connection $currentConnection */
         $currentConnection = Connection::query()
             ->where('id', $frame->fd)
@@ -23,6 +60,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         if ($currentConnection === null) {
             $this->error("Connection not found!");
             SocketErrorAction::run($server, $frame->fd, "Connection closed");
+            if ($transaction && method_exists($transaction, 'setStatus')) {
+                $transaction->setStatus(SpanStatus::notFound());
+            }
             return;
         }
 
@@ -30,11 +70,30 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $currentConnection->last_message_at = Carbon::now();
         $currentConnection->save();
 
+        \Sentry\configureScope(static function (\Sentry\State\Scope $scope) use ($currentConnection): void {
+            $scope->setTag('socket.team', (string) $currentConnection->team?->value ?? (string) $currentConnection->team);
+            $scope->setContext('connection', [
+                'id' => $currentConnection->id,
+                'room_id' => $currentConnection->room_id,
+                'name' => $currentConnection->name,
+                'client_type' => $currentConnection->client_type ?? null,
+            ]);
+        });
+
+        $parseSpan = ($transaction && method_exists($transaction, 'startChild'))
+            ? $transaction->startChild(['op' => 'socket.parse_json'])
+            : null;
         $decodedFrameData = @json_decode($frame->data, true);
+        if ($parseSpan) {
+            $parseSpan->finish();
+        }
 
         if ($decodedFrameData === null) {
             $this->error("JSON data invalid");
             SocketErrorAction::run($server, $frame->fd, "JSON data invalid");
+            if ($transaction && method_exists($transaction, 'setStatus')) {
+                $transaction->setStatus(SpanStatus::invalidArgument());
+            }
             return;
         }
 
@@ -44,6 +103,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $selfMessages = [];
         $messagesByTeam = [];
 
+        $handleSpan = ($transaction && method_exists($transaction, 'startChild'))
+            ? $transaction->startChild(['op' => 'socket.handle'])
+            : null;
         \Illuminate\Support\Facades\DB::transaction(function () use (
             $currentConnection,
             $decodedFrameData,
@@ -315,7 +377,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $roomMap->paint = $roomMapPaint;
             $roomMap->save();
         });
+        if ($handleSpan) {
+            $handleSpan->finish();
+        }
 
+        $pushSpan = ($transaction && method_exists($transaction, 'startChild'))
+            ? $transaction->startChild(['op' => 'socket.push'])
+            : null;
         if ($selfMessages) {
             $server->push($currentConnection->id,  json_encode([
                 'type' => 'messages',
@@ -380,6 +448,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     'messages' => $messages,
                 ]));
             }
+        }
+        if ($pushSpan) {
+            $pushSpan->finish();
+        }
+
+        if ($transaction && method_exists($transaction, 'setStatus')) {
+            $transaction->setStatus(SpanStatus::ok());
         }
     }
 
