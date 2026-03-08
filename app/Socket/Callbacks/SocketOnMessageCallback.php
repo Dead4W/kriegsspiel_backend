@@ -12,7 +12,6 @@ use OpenSwoole\WebSocket\Frame;
 use OpenSwoole\WebSocket\Server;
 use Sentry\SentrySdk;
 use Sentry\Tracing\SpanStatus;
-use Sentry\Tracing\SpanContext;
 
 class SocketOnMessageCallback extends AbstractSocketCallback
 {
@@ -81,12 +80,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             ]);
         });
 
-        $parseSpan = null;
-        if ($transaction && method_exists($transaction, 'startChild')) {
-            $parseContext = new SpanContext();
-            $parseContext->setOp('socket.parse_json');
-            $parseSpan = $transaction->startChild($parseContext);
-        }
+        $parseSpan = ($transaction && method_exists($transaction, 'startChild'))
+            ? $transaction->startChild(['op' => 'socket.parse_json'])
+            : null;
         $decodedFrameData = @json_decode($frame->data, true);
         if ($parseSpan) {
             $parseSpan->finish();
@@ -107,12 +103,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $selfMessages = [];
         $messagesByTeam = [];
 
-        $handleSpan = null;
-        if ($transaction && method_exists($transaction, 'startChild')) {
-            $handleContext = new SpanContext();
-            $handleContext->setOp('socket.handle');
-            $handleSpan = $transaction->startChild($handleContext);
-        }
+        $handleSpan = ($transaction && method_exists($transaction, 'startChild'))
+            ? $transaction->startChild(['op' => 'socket.handle'])
+            : null;
         \Illuminate\Support\Facades\DB::transaction(function () use (
             $currentConnection,
             $decodedFrameData,
@@ -388,12 +381,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $handleSpan->finish();
         }
 
-        $pushSpan = null;
-        if ($transaction && method_exists($transaction, 'startChild')) {
-            $pushContext = new SpanContext();
-            $pushContext->setOp('socket.push');
-            $pushSpan = $transaction->startChild($pushContext);
-        }
+        $pushSpan = ($transaction && method_exists($transaction, 'startChild'))
+            ? $transaction->startChild(['op' => 'socket.push'])
+            : null;
         if ($selfMessages) {
             $server->push($currentConnection->id,  json_encode([
                 'type' => 'messages',
