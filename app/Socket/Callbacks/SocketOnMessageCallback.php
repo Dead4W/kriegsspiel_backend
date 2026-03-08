@@ -8,7 +8,6 @@ use App\Models\Connection;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 use OpenSwoole\WebSocket\Frame;
 use OpenSwoole\WebSocket\Server;
 use Sentry\SentrySdk;
@@ -51,10 +50,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $server = $args[0];
         /** @var Frame $frame */
         $frame = $args[1];
-
-        // This callback runs inside a long-lived OpenSwoole worker. Ensure no leaked
-        // transactions survive between frames (otherwise beginTransaction() can crash).
-        $this->endLeakedTransactions();
 
         $transaction = SentrySdk::getCurrentHub()->getSpan();
 
@@ -118,7 +113,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $handleContext->setOp('socket.handle');
             $handleSpan = $transaction->startChild($handleContext);
         }
-        $transactionCallback = function () use (
+        \Illuminate\Support\Facades\DB::transaction(function () use (
             $currentConnection,
             $decodedFrameData,
             &$goodMessages,
@@ -388,19 +383,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $roomMap->logs = $roomMapLogs;
             $roomMap->paint = $roomMapPaint;
             $roomMap->save();
-        };
-
-        try {
-            DB::transaction($transactionCallback);
-        } catch (\PDOException $e) {
-            if (str_contains($e->getMessage(), 'already an active transaction')) {
-                $this->warning('Detected leaked DB transaction; rolling back and retrying once.');
-                $this->endLeakedTransactions();
-                DB::transaction($transactionCallback);
-            } else {
-                throw $e;
-            }
-        }
+        });
         if ($handleSpan) {
             $handleSpan->finish();
         }
@@ -482,17 +465,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
         if ($transaction && method_exists($transaction, 'setStatus')) {
             $transaction->setStatus(SpanStatus::ok());
-        }
-    }
-
-    private function endLeakedTransactions(): void
-    {
-        try {
-            while (DB::transactionLevel() > 0) {
-                DB::rollBack();
-            }
-        } catch (\Throwable) {
-            // Best-effort only; don't break the socket loop.
         }
     }
 
