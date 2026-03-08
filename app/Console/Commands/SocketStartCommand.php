@@ -9,7 +9,10 @@ use App\Socket\Callbacks\SocketOnStartCallback;
 use Illuminate\Console\Command;
 use OpenSwoole\Server as ServerAlias;
 use OpenSwoole\WebSocket\Server;
+use OpenSwoole\WebSocket\Frame;
 use OpenSwoole\Constant;
+use Sentry\SentrySdk;
+use Sentry\Tracing\TransactionContext;
 
 class SocketStartCommand extends Command
 {
