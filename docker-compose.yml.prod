@@ -20,7 +20,7 @@ services:
         ports:
             - "15461:5432"
 
-    nginx:
+    nginx_kriegspiel:
         image: nginx:alpine
         restart: unless-stopped
         working_dir: /app
