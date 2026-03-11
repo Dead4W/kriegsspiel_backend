@@ -2,9 +2,9 @@
 
 namespace App\Socket\Callbacks;
 
-use App\Enums\ConnectionClientTypeEnum;
 use App\Enums\TeamEnum;
 use App\Models\Connection;
+use App\Services\MetricsService;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
@@ -15,6 +15,21 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 {
 
     public function __invoke(Server $server, Frame $frame) {
+        $start = microtime(true);
+        $metrics = app(MetricsService::class);
+        $metrics->incrementMessageCount();
+
+        try {
+            $this->run($server, $frame);
+        } catch (\Throwable $t) {
+            $metrics->incrementErrorCount();
+        } finally {
+            $duration = microtime(true) - $start;
+            $metrics->addMessageDuration($duration);
+        }
+    }
+
+    protected function run(Server $server, Frame $frame) {
         /** @var Connection $currentConnection */
         $currentConnection = Connection::query()
             ->where('id', $frame->fd)

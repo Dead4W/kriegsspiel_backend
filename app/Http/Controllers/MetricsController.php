@@ -7,6 +7,7 @@ use App\Models\Room;
 use App\Models\RoomChat;
 use App\Models\Snapshot;
 use App\Models\User;
+use App\Services\MetricsService;
 use Illuminate\Http\Response;
 
 class MetricsController extends Controller
@@ -72,6 +73,12 @@ class MetricsController extends Controller
         $lines[] = 'kriegsspiel_users_total ' . User::count();
         $lines[] = 'kriegsspiel_snapshots_total ' . Snapshot::count();
         $lines[] = 'kriegsspiel_chats_total ' . RoomChat::count();
+
+        // Profile metrics (from Redis, requires shared Redis between WebSocket and HTTP)
+        $metrics = app(MetricsService::class);
+        $lines[] = 'kriegsspiel_websocket_messages_total ' . $metrics->getMessageCount();
+        $lines[] = 'kriegsspiel_websocket_message_duration_seconds_total ' . $metrics->getMessageDurationTotal();
+        $lines[] = 'kriegsspiel_websocket_messages_errors_total ' . $metrics->getErrorCount();
 
         return implode("\n", $lines) . "\n";
     }
