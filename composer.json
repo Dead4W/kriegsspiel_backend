@@ -6,14 +6,15 @@
     "license": "MIT",
     "require": {
         "php": "^8.1",
+        "ext-curl": "*",
         "guzzlehttp/guzzle": "^7.2",
         "laravel/framework": "^10.10",
         "laravel/octane": "^2.3",
         "laravel/sanctum": "^3.3",
         "laravel/tinker": "^2.8",
         "openswoole/core": "^22.1",
-        "sentry/sentry-laravel": "^4.20",
-        "ext-curl": "*"
+        "predis/predis": "^3.4",
+        "sentry/sentry-laravel": "^4.20"
     },
     "require-dev": {
         "barryvdh/laravel-ide-helper": "^3.1",

@@ -20,6 +20,12 @@ services:
         ports:
             - "15461:5432"
 
+    redis:
+        image: redis:alpine
+        restart: unless-stopped
+        networks:
+            - internal
+
     nginx_kriegspiel:
         image: nginx:alpine
         restart: unless-stopped
@@ -39,7 +45,7 @@ services:
             - traefik.http.routers.kr_backend.tls.certresolver=letsencrypt
             - traefik.docker.network=proxy
         depends_on:
-            - db_kriegspiel
+            - php_kriegspiel
 
     php_kriegspiel:
         build: .docker/php
@@ -55,6 +61,7 @@ services:
             - proxy
         depends_on:
             - db_kriegspiel
+            - redis
         labels:
             - traefik.enable=true
             - traefik.http.routers.kr_socket.rule=Host(`socket.kriegsspiel.io`)

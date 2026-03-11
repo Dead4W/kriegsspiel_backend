@@ -11,6 +11,10 @@ services:
         ports:
             - "15433:5432"
 
+    redis:
+        image: redis:alpine
+        restart: unless-stopped
+
     nginx:
         image: nginx:alpine
         restart: unless-stopped
@@ -20,7 +24,7 @@ services:
             - ./.docker/nginx/conf/nginx.conf:/etc/nginx/conf/nginx.conf:ro
             - ./.docker/nginx/conf.d:/etc/nginx/conf.d:ro
         depends_on:
-            - db_kriegspiel
+            - php_kriegspiel
 
     php_kriegspiel:
         build: .docker/php
@@ -33,3 +37,5 @@ services:
             - ./.docker/php/supervisord.conf:/etc/supervisor/conf.d/supervisor.conf:ro
         depends_on:
             - db_kriegspiel
+            - redis
+
