@@ -23,6 +23,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $this->run($server, $frame);
         } catch (\Throwable $t) {
             $metrics->incrementErrorCount();
+            throw $t;
         } finally {
             $duration = microtime(true) - $start;
             $metrics->addMessageDuration($duration);
