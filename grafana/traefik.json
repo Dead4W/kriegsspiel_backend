@@ -203,8 +203,8 @@
               "uid": "e75415c1-700f-4636-a059-b3bb5fc9adb5"
             },
             "editorMode": "code",
-            "expr": "sum(rate(traefik_entrypoint_requests_total{entrypoint=~\"$entrypoint\"}[1m])) by (entrypoint)",
-            "legendFormat": "{{entrypoint}}",
+            "expr": "sum(rate(traefik_entrypoint_requests_total{entrypoint=~\"$entrypoint\"}[1m])) by (entrypoint, protocol)",
+            "legendFormat": "{{entrypoint}} ({{protocol}})",
             "range": true,
             "refId": "A"
           }
