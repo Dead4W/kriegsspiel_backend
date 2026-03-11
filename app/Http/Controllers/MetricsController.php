@@ -25,7 +25,7 @@ class MetricsController extends Controller
 
         // Current WebSocket connections (gauge)
         $connectionsCount = Connection::count();
-        $lines[] = "kriegsspiel.websocket_connections_current {$connectionsCount}";
+        $lines[] = "kriegsspiel_websocket_connections_current {$connectionsCount}";
 
         return implode("\n", $lines) . "\n";
     }
