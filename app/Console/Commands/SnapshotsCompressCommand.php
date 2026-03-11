@@ -12,6 +12,8 @@ class SnapshotsCompressCommand extends Command
 
     public function handle(): void
     {
+        ini_set('memory_limit', '512M');
+
         $query = \App\Models\Snapshot::query()
             ->where('created_at', '<', \Carbon\Carbon::now()->subDays(3))
             ->where('data_type', \App\Enums\DataTypeEnum::JSON->value);
@@ -19,14 +21,16 @@ class SnapshotsCompressCommand extends Command
         $progressBar = $this->output->createProgressBar($query->count());
         $progressBar->start();
 
-        $query->each(function (\App\Models\Snapshot $snapshot) use ($progressBar) {
-            $snapshot->data_raw = gzcompress(json_encode(['units' => $snapshot->units, 'paint' => $snapshot->paint, 'logs' => $snapshot->logs]));
-            $snapshot->units = [];
-            $snapshot->paint = [];
-            $snapshot->logs = [];
-            $snapshot->data_type = \App\Enums\DataTypeEnum::GZ_COMPRESSED;
-            $snapshot->save();
-            $progressBar->advance();
+        $query->chunk(1, function ($snapshots) use ($progressBar) {
+            foreach ($snapshots as $snapshot) {
+                $snapshot->data_raw = gzcompress(json_encode(['units' => $snapshot->units, 'paint' => $snapshot->paint, 'logs' => $snapshot->logs]));
+                $snapshot->units = [];
+                $snapshot->paint = [];
+                $snapshot->logs = [];
+                $snapshot->data_type = \App\Enums\DataTypeEnum::GZ_COMPRESSED;
+                $snapshot->save();
+                $progressBar->advance();
+            }
         });
 
         $progressBar->finish();
