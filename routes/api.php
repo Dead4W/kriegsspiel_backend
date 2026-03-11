@@ -19,7 +19,8 @@ use Illuminate\Support\Facades\Route;
 //    return $request->user();
 //});
 
-Route::get('metrics', \App\Http\Controllers\MetricsController::class);
+Route::get('metrics', \App\Http\Controllers\MetricsController::class)
+    ->middleware('metrics.restrict');
 
 Route::middleware(DisableCors::class)->group(function () {
     Route::middleware([
