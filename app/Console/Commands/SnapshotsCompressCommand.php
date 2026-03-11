@@ -10,6 +10,8 @@ class SnapshotsCompressCommand extends Command
 
     public $description = 'Compress old snapshots';
 
+    public const COMPRESS_LEVEL = 6;
+
     public function handle(): void
     {
         ini_set('memory_limit', '512M');
@@ -23,7 +25,7 @@ class SnapshotsCompressCommand extends Command
 
         $query->chunk(1, function ($snapshots) use ($progressBar) {
             foreach ($snapshots as $snapshot) {
-                $snapshot->data_raw = gzcompress(json_encode(['units' => $snapshot->units, 'paint' => $snapshot->paint, 'logs' => $snapshot->logs]));
+                $snapshot->data_raw = gzcompress(json_encode(['units' => $snapshot->units, 'paint' => $snapshot->paint, 'logs' => $snapshot->logs]), self::COMPRESS_LEVEL);
                 $snapshot->units = [];
                 $snapshot->paint = [];
                 $snapshot->logs = [];
