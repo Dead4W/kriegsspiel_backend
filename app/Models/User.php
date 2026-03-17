@@ -34,6 +34,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {
     protected $fillable = [
         'name',
+        'google_id',
+        'email',
+        'avatar',
     ];
 
     protected $casts = [

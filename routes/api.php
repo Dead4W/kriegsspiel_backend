@@ -34,6 +34,7 @@ Route::middleware(DisableCors::class)->group(function () {
         TokenAuthMiddleware::class,
     ])->group(function () {
         Route::get('user/auth', [\App\Http\Controllers\UserController::class, 'auth']);
+        Route::get('user/rooms', [\App\Http\Controllers\UserController::class, 'rooms']);
 
         Route::prefix('room')->group(function() {
             Route::put('', [\App\Http\Controllers\RoomController::class, 'create']);

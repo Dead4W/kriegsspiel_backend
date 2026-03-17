@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\TeamEnum;
 use App\Models\Room;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,8 @@ class RoomController extends Controller
         $room->options = $data['options'];
 
         $room->save();
+
+        $room->users()->attach($user->id, ['team' => TeamEnum::ADMIN]);
 
         return response()->json([
             'uuid' => $room->uuid,
@@ -70,6 +73,15 @@ class RoomController extends Controller
             return response()->json([
                 'message' => 'wrong_key',
             ], 403);
+        }
+
+        /** @var User $user */
+        $user = auth()->user();
+        $existing = $room->users()->where('user_id', $user->id)->first();
+        if ($existing) {
+            $room->users()->updateExistingPivot($user->id, ['team' => $team]);
+        } else {
+            $room->users()->attach($user->id, ['team' => $team]);
         }
 
         $result = [
