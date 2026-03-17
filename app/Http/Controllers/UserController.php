@@ -39,8 +39,9 @@ class UserController extends Controller
         $user = auth()->user();
 
         return response()->json([
-            'id'   => $user->id,
-            'name' => $user->name,
+            'id'         => $user->id,
+            'name'       => $user->name,
+            'avatar_url' => $user->avatar,
         ]);
     }
 
