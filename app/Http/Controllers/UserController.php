@@ -44,6 +44,22 @@ class UserController extends Controller
         ]);
     }
 
+    public function changeNickname(Request $request)
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'min:3', 'max:32'],
+        ]);
+
+        /** @var User $user */
+        $user = auth()->user();
+        $user->update(['name' => $data['name']]);
+
+        return response()->json([
+            'id'   => $user->id,
+            'name' => $user->name,
+        ]);
+    }
+
     public function rooms()
     {
         /** @var User $user */
@@ -57,11 +73,19 @@ class UserController extends Controller
                 : ($team === TeamEnum::RED ? $room->red_key : ($team === TeamEnum::BLUE ? $room->blue_key : null));
 
             return [
-                'uuid'       => $room->uuid,
-                'name'       => $room->name,
-                'team'       => $team->value,
-                'key'        => $key,
-                'created_at' => $room->created_at,
+                'uuid'        => $room->uuid,
+                'name'        => $room->name,
+                'team'        => $team->value,
+                'key'         => $key,
+                'stage'       => $room->stage,
+                'ingame_time' => $room->ingame_time,
+                'options'     => $room->options,
+                'admin_id'    => $room->admin_id,
+                'map_url'     => $room->map_url ?? null,
+                'height_map_url' => $room->height_map_url ?? null,
+                'weather'     => $room->weather ?? null,
+                'created_at'  => $room->created_at,
+                'updated_at'  => $room->updated_at,
             ];
         });
 
