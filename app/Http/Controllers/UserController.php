@@ -41,7 +41,10 @@ class UserController extends Controller
         return response()->json([
             'id'         => $user->id,
             'name'       => $user->name,
+            'email'      => $user->email,
             'avatar_url' => $user->avatar,
+            'picture'    => $user->avatar,
+            'provider'   => $user->google_id ? 'google' : null,
         ]);
     }
 
