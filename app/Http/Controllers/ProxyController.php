@@ -21,7 +21,9 @@ class ProxyController extends Controller
             return response('Only https allowed', 403);
         }
 
-        $headers = [];
+        $headers = [
+            'Origin' => config('app.url'),
+        ];
 
         // forward Range header for streaming
         if ($request->headers->has('Range')) {
