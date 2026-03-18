@@ -5,6 +5,7 @@ namespace App\Socket\Callbacks;
 use App\Enums\ConnectionClientTypeEnum;
 use App\Models\Connection;
 use App\Models\Session;
+use App\Models\UserToken;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
@@ -22,6 +23,29 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $roomUuid = $request->get['room_id'] ?? '';
         $password = $request->get['password'] ?? '';
         $key = $request->get['key'];
+        $token = $request->get['token'] ?? null;
+        if (!$token) {
+            $authHeader = $request->header['authorization'] ?? $request->header['Authorization'] ?? null;
+            if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
+                $token = substr($authHeader, 7);
+            }
+        }
+
+        $userId = null;
+        if ($token) {
+            $userToken = UserToken::with('user')
+                ->where('token', $token)
+                ->first();
+            if ($userToken?->user) {
+                $userId = $userToken->user->id;
+            }
+        }
+
+        if ($userId === null) {
+            $this->warning('Bad new connection "token", disconnecting...');
+            SocketErrorAction::run($server, $connectionId, "Token incorrect!");
+            return;
+        }
 
         $room = \App\Models\Room::query()
             ->where('uuid', $roomUuid)
@@ -66,6 +90,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $currentConnection = new Connection();
         $currentConnection->id = $connectionId;
         $currentConnection->room_id = $room->id;
+        $currentConnection->user_id = $userId;
         $currentConnection->team = $team;
         $currentConnection->last_message_at = Carbon::now();
         $currentConnection->save();
