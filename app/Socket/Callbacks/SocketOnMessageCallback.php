@@ -100,6 +100,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     }
                 } elseif ($message['type'] === 'paint_add') {
                     $paintData = $message['data'];
+                    unset($paintData['moveFrames']);
                     $roomMapPaint[$paintData['id']] = $paintData;
 
                     if ($currentConnection->team === TeamEnum::ADMIN) {
