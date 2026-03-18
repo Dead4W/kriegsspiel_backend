@@ -101,6 +101,23 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 } elseif ($message['type'] === 'paint_add') {
                     $paintData = $message['data'];
                     $roomMapPaint[$paintData['id']] = $paintData;
+
+                    if ($currentConnection->team === TeamEnum::ADMIN) {
+                        $otherMaps = \App\Models\RoomMap::query()
+                            ->where('room_id', $currentConnection->room_id)
+                            ->where('team', '!=', TeamEnum::ADMIN)
+                            ->get();
+
+                        foreach ($otherMaps as $otherMap) {
+                            $otherMapPaint = $otherMap->paint;
+                            $otherMapPaint[$paintData['id']] = $paintData;
+                            $otherMap->paint = $otherMapPaint;
+                            $otherMap->save();
+                        }
+
+                        $allMessages[] = $message;
+                        continue;
+                    }
                 } elseif ($message['type'] === 'paint_undo') {
                     $id = $message['data']['id'];
                     unset($roomMapPaint[$id]);
