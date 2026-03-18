@@ -24,6 +24,8 @@ class SocketStartCommand extends Command
     public $description = 'Start the Socket server';
 
     public function handle() {
+        ini_set('memory_limit', '512M');
+
         $server = new Server(
             host: $this->option('host') ?? "0.0.0.0",
             port: $this->option('port') ?? 9501,
