@@ -75,13 +75,15 @@ class RoomController extends Controller
             ], 403);
         }
 
-        /** @var User $user */
-        $user = auth()->user();
-        $existing = $room->users()->where('user_id', $user->id)->first();
-        if ($existing) {
-            $room->users()->updateExistingPivot($user->id, ['team' => $team]);
-        } else {
-            $room->users()->attach($user->id, ['team' => $team]);
+        if ($room->stage !== 'end') {
+            /** @var User $user */
+            $user = auth()->user();
+            $existing = $room->users()->where('user_id', $user->id)->first();
+            if ($existing) {
+                $room->users()->updateExistingPivot($user->id, ['team' => $team]);
+            } else {
+                $room->users()->attach($user->id, ['team' => $team]);
+            }
         }
 
         $result = [
