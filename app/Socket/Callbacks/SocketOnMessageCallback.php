@@ -99,13 +99,17 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         unset($roomMapUnits[$unitUuid]);
                     }
                 } elseif ($message['type'] === 'paint_add') {
+                    $isSharedForPlayers = $currentConnection->team === TeamEnum::ADMIN
+                        && isset($message['data']['sharedForPlayers'])
+                        && $message['data']['sharedForPlayers'];
                     $paintData = $message['data'];
                     if (isset($paintData['moveFrames'])) {
                         unset($paintData['moveFrames']);
                     }
                     $roomMapPaint[$paintData['id']] = $paintData;
 
-                    if ($currentConnection->team === TeamEnum::ADMIN) {
+                    if ($isSharedForPlayers) {
+                        unset($message['data']['sharedForPlayers']);
                         $otherMaps = \App\Models\RoomMap::query()
                             ->where('room_id', $currentConnection->room_id)
                             ->where('team', '!=', TeamEnum::ADMIN)
