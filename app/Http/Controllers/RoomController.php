@@ -38,6 +38,19 @@ class RoomController extends Controller
 
         $room->users()->attach($user->id, ['team' => TeamEnum::ADMIN]);
 
+        // create red, blue, admin maps
+        $toCreateTeams = [
+            TeamEnum::ADMIN,
+            TeamEnum::RED,
+            TeamEnum::BLUE,
+        ];
+        foreach ($toCreateTeams as $createTeam) {
+            $roomMap = new \App\Models\RoomMap();
+            $roomMap->room_id = $room->id;
+            $roomMap->team = $createTeam;
+            $roomMap->save();
+        }
+
         return response()->json([
             'uuid' => $room->uuid,
             'admin_key' => $room->admin_key,
