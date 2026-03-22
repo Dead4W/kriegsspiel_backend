@@ -69,7 +69,10 @@ class UserController extends Controller
         /** @var User $user */
         $user = auth()->user();
 
-        $rooms = $user->rooms()->get()->map(function (\App\Models\Room $room) use ($user) {
+        $rooms = $user
+            ->rooms()
+            ->orderByDesc('id')
+            ->get()->map(function (\App\Models\Room $room) use ($user) {
             $room->makeVisible(['admin_key', 'red_key', 'blue_key']);
             $team = $room->pivot->team;
             $key = ($room->admin_id === $user->id || $team === TeamEnum::ADMIN || $room->stage === 'end')
