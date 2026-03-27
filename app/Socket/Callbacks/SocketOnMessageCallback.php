@@ -4,6 +4,8 @@ namespace App\Socket\Callbacks;
 
 use App\Enums\TeamEnum;
 use App\Models\Connection;
+use App\Models\RoomMapItem;
+use App\Services\RoomMapItemsService;
 use App\Services\MetricsService;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
@@ -58,7 +60,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $chatMessages = [];
         $allMessages = [];
         $selfMessages = [];
-        $messagesByTeam = [];
+        $messagesByTeam = [
+            TeamEnum::RED->value => [],
+            TeamEnum::BLUE->value => [],
+            TeamEnum::ADMIN->value => [],
+            TeamEnum::SPECTATOR->value => [],
+        ];
 
         \Illuminate\Support\Facades\DB::transaction(function () use (
             $currentConnection,
@@ -86,17 +93,27 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 ->where('room_id', $currentConnection->room_id)
                 ->where('team', $currentConnection->team)
                 ->firstOrFail();
-            $roomMapUnits = $roomMap->units ?? [];
-            $roomMapLogs = $roomMap->logs ?? [];
-            $roomMapPaint = $roomMap->paint ?? [];
+            $roomMapItemsService = app(RoomMapItemsService::class);
             foreach ($decodedFrameData['messages'] as $message) {
                 if ($message['type'] === 'unit') {
-                    $unitUuid = $message['data']['id'];
-
-                    $roomMapUnits[$unitUuid] = $message['data'];
+                    $itemData = $message['data'];
+                    RoomMapItem::query()->updateOrCreate(
+                        [
+                            'room_map_id' => $roomMap->id,
+                            'type' => RoomMapItemsService::TYPE_UNIT,
+                            'item_id' => $itemData['id'],
+                        ],
+                        [
+                            'data' => $itemData,
+                        ]
+                    );
                 } elseif ($message['type'] === 'unit-remove') {
-                    foreach ($message['data'] as $unitUuid) {
-                        unset($roomMapUnits[$unitUuid]);
+                    if (!empty($message['data'])) {
+                        \App\Models\RoomMapItem::query()
+                            ->where('room_map_id', $roomMap->id)
+                            ->where('type', RoomMapItemsService::TYPE_UNIT)
+                            ->whereIn('item_id', $message['data'])
+                            ->delete();
                     }
                 } elseif ($message['type'] === 'paint_add') {
                     $isSharedForPlayers = $currentConnection->team === TeamEnum::ADMIN
@@ -106,7 +123,16 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     if (isset($paintData['moveFrames'])) {
                         unset($paintData['moveFrames']);
                     }
-                    $roomMapPaint[$paintData['id']] = $paintData;
+                    RoomMapItem::query()->updateOrCreate(
+                        [
+                            'room_map_id' => $roomMap->id,
+                            'type' => RoomMapItemsService::TYPE_PAINT,
+                            'item_id' => $paintData['id'],
+                        ],
+                        [
+                            'data' => $paintData,
+                        ]
+                    );
 
                     if ($isSharedForPlayers) {
                         unset($message['data']['sharedForPlayers']);
@@ -116,10 +142,16 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             ->get();
 
                         foreach ($otherMaps as $otherMap) {
-                            $otherMapPaint = $otherMap->paint;
-                            $otherMapPaint[$paintData['id']] = $paintData;
-                            $otherMap->paint = $otherMapPaint;
-                            $otherMap->save();
+                            RoomMapItem::query()->updateOrCreate(
+                                [
+                                    'room_map_id' => $otherMap->id,
+                                    'type' => RoomMapItemsService::TYPE_PAINT,
+                                    'item_id' => $paintData['id'],
+                                ],
+                                [
+                                    'data' => $paintData,
+                                ]
+                            );
                         }
 
                         $allMessages[] = $message;
@@ -127,24 +159,22 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     }
                 } elseif ($message['type'] === 'paint_undo') {
                     $id = $message['data']['id'];
-                    unset($roomMapPaint[$id]);
-
+                    $roomMapIds = [$roomMap->id];
                     if ($currentConnection->team === TeamEnum::ADMIN) {
-                        $otherMaps = \App\Models\RoomMap::query()
+                        $otherMapIds = \App\Models\RoomMap::query()
                             ->where('room_id', $currentConnection->room_id)
                             ->where('team', '!=', TeamEnum::ADMIN)
-                            ->get();
-
-                        foreach ($otherMaps as $otherMap) {
-                            $otherMapPaint = $otherMap->paint;
-                            unset($otherMapPaint[$id]);
-                            $otherMap->paint = $otherMapPaint;
-                            $otherMap->save();
-                        }
-
+                            ->pluck('id')
+                            ->all();
                         $allMessages[] = $message;
-                        continue;
+                        $roomMapIds = array_merge($roomMapIds, $otherMapIds);
                     }
+
+                    \App\Models\RoomMapItem::query()
+                        ->whereIn('room_map_id', $roomMapIds)
+                        ->where('type', RoomMapItemsService::TYPE_PAINT)
+                        ->where('item_id', $id)
+                        ->delete();
                 } elseif ($message['type'] === 'chat') {
                     $roomChat = new \App\Models\RoomChat();
                     $roomChat->uuid = $message['data']['id'];
@@ -180,9 +210,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         \App\Socket\Actions\SnapshotBoardAction::run(
                             $room,
                             $roomMap,
-                            $roomMapUnits,
-                            $roomMapLogs,
-                            $roomMapPaint,
                         );
 
                         $allMessages[] = $message;
@@ -216,24 +243,19 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                             if ($message['data'] === 'war') {
                                 \App\Socket\Actions\CopyBoardAction::run(
-                                    $currentConnection,
+                                    $roomMap,
                                     TeamEnum::BLUE,
-                                    $roomMapUnits,
                                     $selfMessages
                                 );
                                 \App\Socket\Actions\CopyBoardAction::run(
-                                    $currentConnection,
+                                    $roomMap,
                                     TeamEnum::RED,
-                                    $roomMapUnits,
                                     $selfMessages
                                 );
 
                                 \App\Socket\Actions\SnapshotBoardAction::run(
                                     $room,
                                     $roomMap,
-                                    $roomMapUnits,
-                                    $roomMapLogs,
-                                    $roomMapPaint,
                                 );
                             }
                         }
@@ -289,22 +311,41 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 continue;
                             }
 
-                            $roomMapTeamUnits = $roomMapTeam->units;
-                            foreach ($roomChat->unitIds as $unitId) {
-                                if (!isset($snapshotRoomMapAdminUnits[$unitId])) continue;
-                                if (!isset($roomMapTeamUnits[$unitId])) continue;
-                                $roomMapTeamUnits[$unitId]['hp'] = $snapshotRoomMapAdminUnits[$unitId]['hp'];
-                                $roomMapTeamUnits[$unitId]['ammo'] = $snapshotRoomMapAdminUnits[$unitId]['ammo'];
-                                $roomMapTeamUnits[$unitId]['pos'] = $snapshotRoomMapAdminUnits[$unitId]['pos'];
-                                $team = $snapshotRoomMapAdminUnits[$unitId]['team'];
-                                if (!isset($messagesByTeam[$team])) $messagesByTeam[$team] = [];
-                                $messagesByTeam[$team][] = [
-                                    'type' => 'unit',
-                                    'data' => $roomMapTeamUnits[$unitId],
-                                ];
+                            if ($roomChat->unitIds) {
+                                $roomMapTeamUnits = \App\Models\RoomMapItem::query()
+                                    ->where('room_map_id', $roomMapTeam->id)
+                                    ->where('type', RoomMapItemsService::TYPE_UNIT)
+                                    ->whereIn('item_id', $roomChat->unitIds)
+                                    ->get()
+                                    ->mapWithKeys(fn (RoomMapItem $item) => [
+                                        $item->item_id => $item->data ?? [],
+                                    ])
+                                    ->all();
+                                foreach ($roomChat->unitIds as $unitId) {
+                                    if (!isset($snapshotRoomMapAdminUnits[$unitId])) continue;
+                                    if (!isset($roomMapTeamUnits[$unitId])) continue;
+                                    $roomMapTeamUnits[$unitId]['hp'] = $snapshotRoomMapAdminUnits[$unitId]['hp'];
+                                    $roomMapTeamUnits[$unitId]['ammo'] = $snapshotRoomMapAdminUnits[$unitId]['ammo'];
+                                    $roomMapTeamUnits[$unitId]['pos'] = $snapshotRoomMapAdminUnits[$unitId]['pos'];
+                                    $team = $snapshotRoomMapAdminUnits[$unitId]['team'];
+                                    $messagesByTeam[$team][] = [
+                                        'type' => 'unit',
+                                        'data' => $roomMapTeamUnits[$unitId],
+                                    ];
+                                }
+                                foreach ($roomMapTeamUnits as $itemId => $itemData) {
+                                    RoomMapItem::query()->updateOrCreate(
+                                        [
+                                            'room_map_id' => $roomMapTeam->id,
+                                            'type' => RoomMapItemsService::TYPE_UNIT,
+                                            'item_id' => (string) $itemId,
+                                        ],
+                                        [
+                                            'data' => $itemData,
+                                        ]
+                                    );
+                                }
                             }
-                            $roomMapTeam->units = $roomMapTeamUnits;
-                            $roomMapTeam->save();
                         }
                     } else if ($message['type'] === 'direct_view') {
                         $roomMapTeam = \App\Models\RoomMap::query()
@@ -317,15 +358,33 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             continue;
                         }
 
+                        \App\Models\RoomMapItem::query()
+                            ->where('room_map_id', $roomMapTeam->id)
+                            ->where('type', RoomMapItemsService::TYPE_UNIT)
+                            ->where('data->directView', true)
+                            ->where(function ($query) use ($message) {
+                                $query->where('data->team', '!=', $message['team']);
+                            })
+                            ->delete();
+
                         $directViewUuids = [];
-                        $roomMapTeamUnits = $roomMapTeam->units;
-                        foreach ($roomMapTeamUnits as $unitUuid => $unit) {
-                            if ($unit['directView'] && $unit['team'] !== $message['team']) {
-                                unset($roomMapTeamUnits[$unitUuid]);
-                            }
-                        }
                         foreach ($message['data'] as $messageData) {
                             $directViewUuids[] = $messageData['id'];
+                        }
+
+                        $roomMapTeamUnits = \App\Models\RoomMapItem::query()
+                            ->where('room_map_id', $roomMapTeam->id)
+                            ->where('type', RoomMapItemsService::TYPE_UNIT)
+                            ->where(function ($query) use ($directViewUuids) {
+                                $query
+                                    ->whereIn('item_id', $directViewUuids)
+                                    ->orWhere('data->directView', true);
+                            })
+                            ->get()
+                            ->pluck('data', 'item_id')
+                            ->toArray();
+
+                        foreach ($message['data'] as $messageData) {
                             if (isset($roomMapTeamUnits[$messageData['id']])) {
                                 foreach ($messageData as $unitKey => $unitValue) {
                                     $roomMapTeamUnits[$messageData['id']][$unitKey] = $unitValue;
@@ -339,9 +398,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 $roomMapTeamUnit['directView'] = in_array($roomMapTeamUnit['id'], $directViewUuids);
                             }
                         }
-                        $roomMapTeam->units = $roomMapTeamUnits;
-                        $roomMapTeam->save();
-                        if (!isset($messagesByTeam[$message['team']])) $messagesByTeam[$message['team']] = [];
+                        foreach ($roomMapTeamUnits as $itemData) {
+                            RoomMapItem::query()->updateOrCreate(
+                                [
+                                    'room_map_id' => $roomMapTeam->id,
+                                    'type' => RoomMapItemsService::TYPE_UNIT,
+                                    'item_id' => $itemData['id'],
+                                ],
+                                [
+                                    'data' => $itemData,
+                                ]
+                            );
+                        }
                         $messagesByTeam[$message['team']][] = $message;
                         continue;
                     } else if ($message['type'] === 'weather') {
@@ -367,9 +435,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             }
 
             $room->save();
-            $roomMap->units = $roomMapUnits;
-            $roomMap->logs = $roomMapLogs;
-            $roomMap->paint = $roomMapPaint;
             $roomMap->save();
         });
 

@@ -4,8 +4,10 @@ namespace App\Socket\Callbacks;
 
 use App\Enums\ConnectionClientTypeEnum;
 use App\Models\Connection;
+use App\Models\RoomMapItem;
 use App\Models\Session;
 use App\Models\UserToken;
+use App\Services\RoomMapItemsService;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
@@ -153,28 +155,22 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             ->where('room_id', $roomId)
             ->where('team', $team)
             ->firstOrFail();
-        $roomMapUnits = $roomMap->units;
 
-        foreach ($roomMapUnits as $unitData) {
+        $roomMapItems = RoomMapItem::query()
+            ->where('room_map_id', $roomMap->id)
+            ->lazyById(100);
+        foreach ($roomMapItems as $roomMapItem) {
+            $messageType = match($roomMapItem['type']) {
+                RoomMapItemsService::TYPE_UNIT => 'unit',
+                RoomMapItemsService::TYPE_PAINT => 'paint_add',
+                RoomMapItemsService::TYPE_LOG => 'log',
+                default => throw new \Exception("Invalid room map item type: {$roomMapItem['type']}"),
+            };
             yield [
-                'type' => 'unit',
-                'data' => $unitData,
+                'type' => $messageType,
+                'data' => $roomMapItem['data'],
             ];
         }
-
-        foreach ($roomMap->paint as $paint) {
-            yield [
-                'type' => 'paint_add',
-                'data' => $paint,
-            ];
-        }
-
-//        foreach ($roomMap->logs as $log) {
-//            yield [
-//                'type' => 'log',
-//                'data' => $log,
-//            ];
-//        }
 
         $chatMessages = \App\Models\RoomChat::query()
             ->when(

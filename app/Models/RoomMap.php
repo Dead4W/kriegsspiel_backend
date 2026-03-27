@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\TeamEnum;
 use \Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
@@ -43,4 +44,9 @@ class RoomMap extends Model
         'logs' => 'array',
         'team' => TeamEnum::class,
     ];
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(RoomMapItem::class, 'room_map_id');
+    }
 }

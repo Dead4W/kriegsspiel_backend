@@ -2,16 +2,18 @@
 
 namespace App\Socket\Actions;
 
+use App\Models\RoomMapItem;
+use App\Services\RoomMapItemsService;
+
 class CopyBoardAction
 {
     public static function run(
-        \App\Models\Connection $connection,
+        \App\Models\RoomMap $roomMap,
         \App\Enums\TeamEnum $team,
-        array &$units,
         array &$selfMessages,
     ): void {
         $roomMapOtherTeam = \App\Models\RoomMap::query()
-            ->where('room_id', $connection->room_id)
+            ->where('room_id', $roomMap->room_id)
             ->where('team', $team)
             ->first();
 
@@ -19,22 +21,38 @@ class CopyBoardAction
             return;
         }
 
-        $otherTeamUnits = $roomMapOtherTeam->units;
-        $otherTeamUnits = array_filter($otherTeamUnits, function ($unit) use ($team) {
-            return $unit['team'] && $unit['team'] === $team->value;
-        });
-        foreach ($otherTeamUnits as $unitUuid => $unit) {
+        $otherRoomMapItems = RoomMapItem::query()
+            ->where('room_map_id', $roomMapOtherTeam->id)
+            ->where('type', RoomMapItemsService::TYPE_UNIT)
+            ->lazyById(100);
+
+        foreach ($otherRoomMapItems as $otherRoomMapItem) {
+            $unit = $otherRoomMapItem['data'] ?? [];
+            if (!is_array($unit)) continue;
+            $unitTeam = $unit['team'] ?? null;
+            $unitId = $unit['id'] ?? null;
+            if (!$unitTeam || $unitTeam !== $team->value || !$unitId) continue;
             $copyKeys = ['id', 'type', 'team', 'pos', 'label', 'envState', 'hp', 'ammo', 'messagesLinked'];
             $copyUnit = [];
             foreach ($copyKeys as $key) {
                 $copyUnit[$key] = $unit[$key] ?? null;
             }
-            $units[$unitUuid] = $copyUnit;
             $selfMessages[] = [
                 'type' => 'unit',
                 'data' => $copyUnit,
                 'frames' => [],
             ];
+
+            RoomMapItem::query()->updateOrCreate(
+                [
+                    'room_map_id' => $roomMap->id,
+                    'type' => RoomMapItemsService::TYPE_UNIT,
+                    'item_id' => (string) $unitId,
+                ],
+                [
+                    'data' => $copyUnit,
+                ]
+            );
         }
     }
 }
