@@ -2,6 +2,7 @@
 
 namespace App\Socket\Callbacks;
 
+use App\Enums\TeamEnum;
 use App\Models\Connection;
 use App\Socket\Actions\GetOtherListenersAction;
 use OpenSwoole\WebSocket\Server;
@@ -15,12 +16,17 @@ class SocketOnCloseCallback extends AbstractSocketCallback
             ->first();
 
         if ($currentConnection) {
-            $connectionIds = GetOtherListenersAction::run($currentConnection);
+            $connectionIds = GetOtherListenersAction::run($currentConnection, [TeamEnum::ADMIN, TeamEnum::SPECTATOR]);
             foreach ($connectionIds as $connectionId) {
                 $server->push($connectionId, json_encode([
-                    'type' => 'closed_connection',
-                    'meta' => [
-                        'from' => $currentConnection->meta_from,
+                    'type' => 'messages',
+                    'messages' => [
+                        [
+                            'type' => 'connection_close',
+                            'data' => [
+                                'id' => $currentConnection->id,
+                            ],
+                        ]
                     ],
                 ]));
             }

@@ -3,6 +3,7 @@
 namespace App\Socket\Callbacks;
 
 use App\Enums\ConnectionClientTypeEnum;
+use App\Enums\TeamEnum;
 use App\Models\Connection;
 use App\Models\RoomMapItem;
 use App\Models\Session;
@@ -108,6 +109,22 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $connectionsCount = Connection::count();
 
         $this->info("Connection <{$currentConnection->id}> open by {$currentConnection->name}. Total connections: {$connectionsCount}");
+        $connectionIds = GetOtherListenersAction::run($currentConnection, [TeamEnum::ADMIN, TeamEnum::SPECTATOR]);
+        foreach ($connectionIds as $connectionId) {
+            $server->push($connectionId, json_encode([
+                'type' => 'messages',
+                'messages' => [
+                    [
+                        'type' => 'connection_new',
+                        'data' => [
+                            'id' => $currentConnection->id,
+                            'team' => $currentConnection->team,
+                            'user' => $currentConnection->user?->name,
+                        ],
+                    ]
+                ],
+            ]));
+        }
 
         $messages = [];
         foreach ($this->getAllMessages($currentConnection, $room->id) as $message) {
@@ -150,6 +167,24 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 'ingame_time' => $room->ingame_time->format('Y-m-d H:i:s'),
             ],
         ];
+
+        if (in_array($currentConnection->team, [TeamEnum::ADMIN, TeamEnum::SPECTATOR])) {
+            $connections = Connection::query()
+                ->with('user')
+                ->where('id', '!=', $currentConnection->id)
+                ->where('room_id', $currentConnection->room_id)
+                ->get();
+            foreach ($connections as $connection) {
+                yield [
+                    'type' => 'connection_new',
+                    'data' => [
+                        'id' => $connection->id,
+                        'team' => $connection->team,
+                        'user' => $connection->user?->name,
+                    ],
+                ];
+            }
+        }
 
         $roomMap = \App\Models\RoomMap::query()
             ->where('room_id', $roomId)
