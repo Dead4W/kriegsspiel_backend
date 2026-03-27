@@ -64,10 +64,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             TeamEnum::RED->value => [],
             TeamEnum::BLUE->value => [],
             TeamEnum::ADMIN->value => [],
-            TeamEnum::SPECTATOR->value => [],
+        ];
+        $messagesByTeamUser = [
+            TeamEnum::RED->value => [],
+            TeamEnum::BLUE->value => [],
         ];
 
+        $room = \App\Models\Room::query()
+            ->where('id', $currentConnection->room_id)
+            ->firstOrFail();
+
         \Illuminate\Support\Facades\DB::transaction(function () use (
+            $room,
             $currentConnection,
             $decodedFrameData,
             &$goodMessages,
@@ -75,11 +83,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             &$allMessages,
             &$selfMessages,
             &$messagesByTeam,
+            &$messagesByTeamUser,
         ) {
-            $room = \App\Models\Room::query()
-                ->where('id', $currentConnection->room_id)
-                ->firstOrFail();
-
             if ($currentConnection->team === TeamEnum::SPECTATOR || $room->stage === 'end') {
                 foreach ($decodedFrameData['messages'] as $message) {
                     if (in_array($message['type'], ['cursor'])) {
@@ -89,11 +94,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 // Ignore all messages exclude client
                 return;
             }
-            $roomMap = \App\Models\RoomMap::query()
-                ->where('room_id', $currentConnection->room_id)
-                ->where('team', $currentConnection->team)
-                ->firstOrFail();
-            $roomMapItemsService = app(RoomMapItemsService::class);
+            $roomMap = \App\Models\RoomMap::getRoomMapForConnection($currentConnection);
             foreach ($decodedFrameData['messages'] as $message) {
                 if ($message['type'] === 'unit') {
                     $itemData = $message['data'];
@@ -199,7 +200,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     if (in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED])) {
                         // Send to admin/spectator
                         $messagesByTeam[TeamEnum::ADMIN->value][] = $message;
-                        $messagesByTeam[TeamEnum::SPECTATOR->value][] = $message;
+                    }
+                    if ($room->options['isPlayerRoomMap'] ?? false) {
+                        // pass event
+                        continue;
                     }
                 } else if ($message['type'] === 'ruler') {
                     // pass backend
@@ -302,115 +306,112 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             }
                             $snapshotRoomMapAdminUnits = $snapshotRoomMapAdmin->units;
 
-                            $roomMapTeam = \App\Models\RoomMap::query()
-                                ->where('room_id', $currentConnection->room_id)
-                                ->where('team', $roomChat->team)
-                                ->first();
-                            if (!$roomMapTeam) {
-                                $this->error("Not found roomMap for team '{$message['team']}'");
-                                continue;
-                            }
-
                             if ($roomChat->unitIds) {
-                                $roomMapTeamUnits = \App\Models\RoomMapItem::query()
-                                    ->where('room_map_id', $roomMapTeam->id)
-                                    ->where('type', RoomMapItemsService::TYPE_UNIT)
-                                    ->whereIn('item_id', $roomChat->unitIds)
-                                    ->get()
-                                    ->mapWithKeys(fn (RoomMapItem $item) => [
-                                        $item->item_id => $item->data ?? [],
-                                    ])
-                                    ->all();
-                                foreach ($roomChat->unitIds as $unitId) {
-                                    if (!isset($snapshotRoomMapAdminUnits[$unitId])) continue;
-                                    if (!isset($roomMapTeamUnits[$unitId])) continue;
-                                    $roomMapTeamUnits[$unitId]['hp'] = $snapshotRoomMapAdminUnits[$unitId]['hp'];
-                                    $roomMapTeamUnits[$unitId]['ammo'] = $snapshotRoomMapAdminUnits[$unitId]['ammo'];
-                                    $roomMapTeamUnits[$unitId]['pos'] = $snapshotRoomMapAdminUnits[$unitId]['pos'];
-                                    $team = $snapshotRoomMapAdminUnits[$unitId]['team'];
-                                    $messagesByTeam[$team][] = [
-                                        'type' => 'unit',
-                                        'data' => $roomMapTeamUnits[$unitId],
-                                    ];
-                                }
-                                foreach ($roomMapTeamUnits as $itemId => $itemData) {
-                                    RoomMapItem::query()->updateOrCreate(
-                                        [
-                                            'room_map_id' => $roomMapTeam->id,
-                                            'type' => RoomMapItemsService::TYPE_UNIT,
-                                            'item_id' => (string) $itemId,
-                                        ],
-                                        [
-                                            'data' => $itemData,
-                                        ]
-                                    );
+                                $roomMapsTeam = \App\Models\RoomMap::query()
+                                    ->where('room_id', $currentConnection->room_id)
+                                    ->where('team', $roomChat->team)
+                                    ->get();
+                                foreach ($roomMapsTeam as $roomMapTeam) {
+                                    $roomMapTeamUnits = \App\Models\RoomMapItem::query()
+                                        ->where('room_map_id', $roomMapTeam->id)
+                                        ->where('type', RoomMapItemsService::TYPE_UNIT)
+                                        ->whereIn('item_id', $roomChat->unitIds)
+                                        ->get()
+                                        ->mapWithKeys(fn (RoomMapItem $item) => [
+                                            $item->item_id => $item->data ?? [],
+                                        ])
+                                        ->all();
+                                    foreach ($roomChat->unitIds as $unitId) {
+                                        if (!isset($snapshotRoomMapAdminUnits[$unitId])) continue;
+                                        if (!isset($roomMapTeamUnits[$unitId])) continue;
+                                        $roomMapTeamUnits[$unitId]['hp'] = $snapshotRoomMapAdminUnits[$unitId]['hp'];
+                                        $roomMapTeamUnits[$unitId]['ammo'] = $snapshotRoomMapAdminUnits[$unitId]['ammo'];
+                                        $roomMapTeamUnits[$unitId]['pos'] = $snapshotRoomMapAdminUnits[$unitId]['pos'];
+                                        $team = $snapshotRoomMapAdminUnits[$unitId]['team'];
+                                        if ($roomMapTeam->user_id) {
+                                            $messagesByTeamUser[$team][$roomMapTeam->user_id][] = [
+                                                'type' => 'unit',
+                                                'data' => $roomMapTeamUnits[$unitId],
+                                            ];
+                                        } else {
+                                            $messagesByTeam[$team][] = [
+                                                'type' => 'unit',
+                                                'data' => $roomMapTeamUnits[$unitId],
+                                            ];
+                                        }
+                                        RoomMapItem::query()->updateOrCreate(
+                                            [
+                                                'room_map_id' => $roomMapTeam->id,
+                                                'type' => RoomMapItemsService::TYPE_UNIT,
+                                                'item_id' => (string) $unitId,
+                                            ],
+                                            [
+                                                'data' => $roomMapTeamUnits[$unitId],
+                                            ]
+                                        );
+                                    }
                                 }
                             }
                         }
                     } else if ($message['type'] === 'direct_view') {
-                        $roomMapTeam = \App\Models\RoomMap::query()
+                        $roomMapsTeam = \App\Models\RoomMap::query()
                             ->where('room_id', $currentConnection->room_id)
                             ->where('team', $message['team'])
-                            ->first();
+                            ->get();
 
-                        if (!$roomMapTeam) {
-                            $this->error("Not found roomMap for team '{$message['team']}'");
-                            continue;
-                        }
+                        foreach ($roomMapsTeam as $roomMapTeam) {
+                            \App\Models\RoomMapItem::query()
+                                ->where('room_map_id', $roomMapTeam->id)
+                                ->where('type', RoomMapItemsService::TYPE_UNIT)
+                                ->where('data->directView', true)
+                                ->where(function ($query) use ($message) {
+                                    $query->where('data->team', '!=', $message['team']);
+                                })
+                                ->delete();
 
-                        \App\Models\RoomMapItem::query()
-                            ->where('room_map_id', $roomMapTeam->id)
-                            ->where('type', RoomMapItemsService::TYPE_UNIT)
-                            ->where('data->directView', true)
-                            ->where(function ($query) use ($message) {
-                                $query->where('data->team', '!=', $message['team']);
-                            })
-                            ->delete();
+                            $directViewUuids = array_column($message['data'], 'id');
+                            $roomMapTeamUnits = \App\Models\RoomMapItem::query()
+                                ->where('room_map_id', $roomMapTeam->id)
+                                ->where('type', RoomMapItemsService::TYPE_UNIT)
+                                ->where(function ($query) use ($directViewUuids) {
+                                    $query
+                                        ->whereIn('item_id', $directViewUuids)
+                                        ->orWhere('data->directView', true);
+                                })
+                                ->get()
+                                ->pluck('data', 'item_id')
+                                ->toArray();
 
-                        $directViewUuids = [];
-                        foreach ($message['data'] as $messageData) {
-                            $directViewUuids[] = $messageData['id'];
-                        }
-
-                        $roomMapTeamUnits = \App\Models\RoomMapItem::query()
-                            ->where('room_map_id', $roomMapTeam->id)
-                            ->where('type', RoomMapItemsService::TYPE_UNIT)
-                            ->where(function ($query) use ($directViewUuids) {
-                                $query
-                                    ->whereIn('item_id', $directViewUuids)
-                                    ->orWhere('data->directView', true);
-                            })
-                            ->get()
-                            ->pluck('data', 'item_id')
-                            ->toArray();
-
-                        foreach ($message['data'] as $messageData) {
-                            if (isset($roomMapTeamUnits[$messageData['id']])) {
-                                foreach ($messageData as $unitKey => $unitValue) {
-                                    $roomMapTeamUnits[$messageData['id']][$unitKey] = $unitValue;
+                            foreach ($message['data'] as $messageData) {
+                                if (isset($roomMapTeamUnits[$messageData['id']])) {
+                                    foreach ($messageData as $unitKey => $unitValue) {
+                                        $roomMapTeamUnits[$messageData['id']][$unitKey] = $unitValue;
+                                    }
+                                } else {
+                                    $roomMapTeamUnits[$messageData['id']] = $messageData;
                                 }
+                            }
+                            foreach ($roomMapTeamUnits as &$roomMapTeamUnit) {
+                                if (isset($roomMapTeamUnit['id'])) {
+                                    $roomMapTeamUnit['directView'] = in_array($roomMapTeamUnit['id'], $directViewUuids);
+                                }
+                                RoomMapItem::query()->updateOrCreate(
+                                    [
+                                        'room_map_id' => $roomMapTeam->id,
+                                        'type' => RoomMapItemsService::TYPE_UNIT,
+                                        'item_id' => $roomMapTeamUnit['id'],
+                                    ],
+                                    [
+                                        'data' => $roomMapTeamUnit,
+                                    ]
+                                );
+                            }
+                            if ($roomMapTeam->user_id) {
+                                $messagesByTeamUser[$message['team']][$roomMapTeam->user_id][] = $message;
                             } else {
-                                $roomMapTeamUnits[$messageData['id']] = $messageData;
+                                $messagesByTeam[$message['team']][] = $message;
                             }
                         }
-                        foreach ($roomMapTeamUnits as &$roomMapTeamUnit) {
-                            if (isset($roomMapTeamUnit['id'])) {
-                                $roomMapTeamUnit['directView'] = in_array($roomMapTeamUnit['id'], $directViewUuids);
-                            }
-                        }
-                        foreach ($roomMapTeamUnits as $itemData) {
-                            RoomMapItem::query()->updateOrCreate(
-                                [
-                                    'room_map_id' => $roomMapTeam->id,
-                                    'type' => RoomMapItemsService::TYPE_UNIT,
-                                    'item_id' => $itemData['id'],
-                                ],
-                                [
-                                    'data' => $itemData,
-                                ]
-                            );
-                        }
-                        $messagesByTeam[$message['team']][] = $message;
                         continue;
                     } else if ($message['type'] === 'weather') {
                         $room->weather = $message['data'];
@@ -450,7 +451,16 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             'messages' => array_merge($goodMessages, $selfMessages),
         ];
         if ($data['messages']) {
-            $connectionIds = GetOtherListenersAction::run($currentConnection);
+            if ($room->options['isPlayerRoomMap'] ?? false && in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED])) {
+                $connectionIds = Connection::query()
+                    ->where('id', '!=', $currentConnection->id)
+                    ->where('room_id', $currentConnection->room_id)
+                    ->where('user_id', $currentConnection->room_map_user_id)
+                    ->where('team', $currentConnection->team)
+                    ->pluck('id');
+            } else {
+                $connectionIds = GetOtherListenersAction::run($currentConnection);
+            }
             foreach ($connectionIds as $connectionId) {
                 $server->push($connectionId,  json_encode($data));
             }
@@ -493,6 +503,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             }
         }
 
+        $messagesByTeam[TeamEnum::SPECTATOR->value] = $messagesByTeam[TeamEnum::ADMIN->value] ?? [];
         foreach ($messagesByTeam as $team => $messages) {
             if (!$messages) continue;
             $connectionIds = GetOtherListenersAction::run($currentConnection, [$team]);
@@ -501,6 +512,24 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     'type' => 'messages',
                     'messages' => $messages,
                 ]));
+            }
+        }
+
+        foreach ($messagesByTeamUser as $team => $userMessages) {
+            foreach ($userMessages as $userId => $messages) {
+                if (!$messages) continue;
+                $connectionIds = Connection::query()
+                    ->where('id', '!=', $currentConnection->id)
+                    ->where('room_id', $currentConnection->room_id)
+                    ->where('user_id', $userId)
+                    ->where('team', $team)
+                    ->pluck('id');
+                foreach ($connectionIds as $connectionId) {
+                    $server->push($connectionId, json_encode([
+                        'type' => 'messages',
+                        'messages' => $messages,
+                    ]));
+                }
             }
         }
     }

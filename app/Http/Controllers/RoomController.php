@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\TeamEnum;
 use App\Models\Room;
+use App\Models\RoomMap;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,18 +39,10 @@ class RoomController extends Controller
 
         $room->users()->attach($user->id, ['team' => TeamEnum::ADMIN]);
 
-        // create red, blue, admin maps
-        $toCreateTeams = [
-            TeamEnum::ADMIN,
-            TeamEnum::RED,
-            TeamEnum::BLUE,
-        ];
-        foreach ($toCreateTeams as $createTeam) {
-            $roomMap = new \App\Models\RoomMap();
-            $roomMap->room_id = $room->id;
-            $roomMap->team = $createTeam;
-            $roomMap->save();
-        }
+        $roomMap = new \App\Models\RoomMap();
+        $roomMap->room_id = $room->id;
+        $roomMap->team = TeamEnum::ADMIN;
+        $roomMap->save();
 
         return response()->json([
             'uuid' => $room->uuid,
@@ -113,6 +106,38 @@ class RoomController extends Controller
             $result['admin_key'] = $room->admin_key;
             $result['red_key'] = $room->red_key;
             $result['blue_key'] = $room->blue_key;
+            $roomMaps = RoomMap::query()
+                ->where('room_id', $room->id)
+                ->orderBy('team')
+                ->orderBy('user_id')
+                ->get(['id', 'team', 'user_id']);
+
+            $userNamesById = User::query()
+                ->whereIn('id', $roomMaps->pluck('user_id')->filter()->unique()->values()->all())
+                ->pluck('name', 'id');
+
+            $result['room_maps'] = $roomMaps
+                ->map(function (RoomMap $roomMap) use ($room, $userNamesById) {
+                    $teamValue = $roomMap->team instanceof TeamEnum
+                        ? $roomMap->team->value
+                        : (string) $roomMap->team;
+
+                    $userInfo = null;
+                    if ($roomMap->user_id) {
+                        $userInfo = [
+                            'id' => $roomMap->user_id,
+                            'name' => $userNamesById[$roomMap->user_id] ?? 'Jone Doe'
+                        ];
+                    }
+
+                    return [
+                        'room_map_id' => $roomMap->id,
+                        'team' => $teamValue,
+                        'user' => $userInfo,
+                    ];
+                })
+                ->values()
+                ->all();
         }
 
         return response()->json($result);

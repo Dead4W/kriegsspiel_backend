@@ -28,6 +28,8 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder|Snapshot whereUnits($value)
  * @method static \Illuminate\Database\Eloquent\Builder|Snapshot whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|Snapshot whereLogs($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|Snapshot whereDataRaw($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|Snapshot whereDataType($value)
  * @mixin \Eloquent
  */
 class Snapshot extends Model
