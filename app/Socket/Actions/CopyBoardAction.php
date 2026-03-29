@@ -34,6 +34,7 @@ class CopyBoardAction
                 foreach ($copyKeys as $key) {
                     $copyUnit[$key] = $unit[$key] ?? null;
                 }
+                $copyUnit['roomMapUserId'] = $roomMapOtherTeam->user_id;
                 $selfMessages[] = [
                     'type' => 'unit',
                     'data' => $copyUnit,

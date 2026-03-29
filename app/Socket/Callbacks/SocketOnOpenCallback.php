@@ -168,6 +168,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $room = \App\Models\Room::query()
             ->where('id', $roomId)
             ->firstOrFail();
+        $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
 
         yield [
             'type' => 'room',
@@ -220,7 +221,12 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 $team !== \App\Enums\TeamEnum::ADMIN,
                 fn ($query) => $query
                     ->where('team', $team)
-                    ->where(function ($query) {
+                    ->when($isPlayerRoomMap, function ($query) use ($roomMap) {
+                        $query->whereHas('roomMaps', function (Builder $roomMapQuery) use ($roomMap) {
+                            $roomMapQuery->where('room_maps.id', $roomMap->id);
+                        });
+                    })
+                    ->where(function ($query) use ($isPlayerRoomMap, $roomMap) {
                         $query
                             ->where('author_team', '!=', \App\Enums\TeamEnum::ADMIN)
                             ->orWhere('delivered', '1');

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\TeamEnum;
 use \Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -55,7 +56,12 @@ class RoomMap extends Model
         return $this->hasMany(RoomMapItem::class, 'room_map_id');
     }
 
-    static public function getRoomMapForConnection(Connection $connection) {
+    public function chats(): BelongsToMany
+    {
+        return $this->belongsToMany(RoomChat::class);
+    }
+
+    static public function getRoomMapForConnection(Connection $connection): ?RoomMap {
         $room = Room::query()
             ->where('id', $connection->room_id)
             ->firstOrFail();

@@ -44,6 +44,18 @@ class RoomController extends Controller
         $roomMap->team = TeamEnum::ADMIN;
         $roomMap->save();
 
+        if (!$room->options['isPlayerRoomMap']) {
+            $roomMap = new \App\Models\RoomMap();
+            $roomMap->room_id = $room->id;
+            $roomMap->team = TeamEnum::RED;
+            $roomMap->save();
+
+            $roomMap = new \App\Models\RoomMap();
+            $roomMap->room_id = $room->id;
+            $roomMap->team = TeamEnum::BLUE;
+            $roomMap->save();
+        }
+
         return response()->json([
             'uuid' => $room->uuid,
             'admin_key' => $room->admin_key,

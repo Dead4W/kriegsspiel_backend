@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\TeamEnum;
 use \Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * @property int $id
@@ -52,4 +53,9 @@ class RoomChat extends Model
         'unitIds' => 'array',
         'ingame_time' => 'datetime',
     ];
+
+    public function roomMaps(): BelongsToMany
+    {
+        return $this->belongsToMany(RoomMap::class);
+    }
 }
