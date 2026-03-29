@@ -235,13 +235,13 @@ class RoomController extends Controller
             foreach ($snapshot->units as $unit) {
                 if (!isset($unit['hp'])) continue;
                 if ($unit['type'] === 'messenger') continue;
-                $unit['isRetreat'] = $unit['isRetreat'] ?? false;
+                $unit['isRetreatState'] = $unit['isRetreatState'] ?? false;
                 if ($unit['team'] === 'red') {
                     $hpRed += $unit['hp'];
-                    if ($unit['hp'] > 0 && !$unit['isRetreat']) $unitsRed++;
+                    if ($unit['hp'] > 0 && !$unit['isRetreatState']) $unitsRed++;
                 } else if ($unit['team'] === 'blue') {
                     $hpBlue += $unit['hp'];
-                    if ($unit['hp'] > 0 && !$unit['isRetreat']) $unitsBlue++;
+                    if ($unit['hp'] > 0 && !$unit['isRetreatState']) $unitsBlue++;
                 }
             }
             $result[] = [
