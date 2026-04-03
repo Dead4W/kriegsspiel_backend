@@ -31,7 +31,12 @@ class TokenAuthMiddleware {
             );
         }
 
-        auth()->setUser($userToken->user);
+        /** @var \App\Models\User $user */
+        $user = $userToken->user;
+        $user->last_online_at = \Carbon\Carbon::now();
+        $user->save();
+
+        auth()->setUser($user);
 
         return $next($request);
     }

@@ -48,6 +48,11 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $currentConnection->last_message_at = Carbon::now();
         $currentConnection->save();
 
+        /** @var \App\Models\User $user */
+        $user = $currentConnection->user;
+        $user->last_online_at = Carbon::now();
+        $user->save();
+
         $decodedFrameData = @json_decode($frame->data, true);
 
         if ($decodedFrameData === null) {
