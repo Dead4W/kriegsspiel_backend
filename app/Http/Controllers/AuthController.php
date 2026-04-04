@@ -15,7 +15,17 @@ class AuthController extends Controller
 
     public function handleGoogleCallback()
     {
-        $googleUser = Socialite::driver('google')->user();
+        try {
+            $googleUser = Socialite::driver('google')->user();
+        } catch (\Exception $t) {
+            $redirectUrl = config('services.google.frontend_redirect', env('FRONTEND_URL', '/'));
+            $separator = str_contains($redirectUrl, '?') ? '&' : '?';
+            $url = $redirectUrl . $separator . http_build_query([
+                    'error' => 'Can\'t login with Google.',
+                ]);
+
+            return redirect($url);
+        }
 
         $user = User::query()
             ->where('google_id', $googleUser->getId())
