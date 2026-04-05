@@ -32,6 +32,7 @@ class CopyBoardAction
             $unitTeam = $unit['team'] ?? null;
             $unitId = $unit['id'] ?? null;
             if (!$unitTeam || $unitTeam !== $team->value || !$unitId) continue;
+            if ($unit['type'] == 'messenger') continue;
             $copyKeys = ['id', 'type', 'team', 'pos', 'label', 'envState', 'hp', 'ammo', 'messagesLinked'];
             $copyUnit = [];
             foreach ($copyKeys as $key) {
