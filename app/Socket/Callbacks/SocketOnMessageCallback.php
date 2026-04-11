@@ -140,29 +140,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         ],
                         [
                             'data' => $paintData,
+                            'shared' => $isSharedForPlayers,
                         ]
                     );
 
                     if ($isSharedForPlayers) {
                         unset($message['data']['sharedForPlayers']);
-                        $otherMaps = \App\Models\RoomMap::query()
-                            ->where('room_id', $currentConnection->room_id)
-                            ->where('team', '!=', TeamEnum::ADMIN)
-                            ->get();
-
-                        foreach ($otherMaps as $otherMap) {
-                            RoomMapItem::query()->updateOrCreate(
-                                [
-                                    'room_map_id' => $otherMap->id,
-                                    'type' => RoomMapItemsService::TYPE_PAINT,
-                                    'item_id' => $paintData['id'],
-                                ],
-                                [
-                                    'data' => $paintData,
-                                ]
-                            );
-                        }
-
                         $allMessages[] = $message;
                         continue;
                     }

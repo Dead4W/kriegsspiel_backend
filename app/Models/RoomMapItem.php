@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $type
  * @property string $item_id
  * @property array $data
+ * @property bool $shared
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem newModelQuery()
@@ -31,9 +32,11 @@ class RoomMapItem extends Model
         'type',
         'item_id',
         'data',
+        'shared',
     ];
 
     protected $casts = [
         'data' => 'array',
+        'shared' => 'boolean',
     ];
 }

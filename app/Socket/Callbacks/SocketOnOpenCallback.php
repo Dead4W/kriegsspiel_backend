@@ -165,6 +165,11 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             $team = \App\Enums\TeamEnum::ADMIN;
         }
 
+        $adminRoomMap = \App\Models\RoomMap::query()
+            ->where('room_id', $roomId)
+            ->where('team', TeamEnum::ADMIN)
+            ->firstOrFail();
+
         $room = \App\Models\Room::query()
             ->where('id', $roomId)
             ->firstOrFail();
@@ -202,6 +207,14 @@ class SocketOnOpenCallback extends AbstractSocketCallback
 
         $roomMapItems = RoomMapItem::query()
             ->where('room_map_id', $roomMap->id)
+            ->when($adminRoomMap->id !== $roomMap->id, function (Builder $query) use ($adminRoomMap) {
+                $query->orWhere(function (Builder $query) use ($adminRoomMap) {
+                    $query
+                        ->where('room_map_id', $adminRoomMap->id)
+                        ->where('shared', true);
+                });
+            })
+            ->orderBy('id')
             ->lazyById(100);
         foreach ($roomMapItems as $roomMapItem) {
             $messageType = match($roomMapItem['type']) {
