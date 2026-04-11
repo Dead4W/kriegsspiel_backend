@@ -10,7 +10,6 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property int $id
  * @property string $name
- * @property \App\Enums\TeamEnum $team
  * @property \Illuminate\Support\Carbon|null $last_online_at
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
@@ -46,7 +45,6 @@ class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {
     ];
 
     protected $casts = [
-        'team' => \App\Enums\TeamEnum::class,
         'last_online_at' => 'datetime',
     ];
 

@@ -211,7 +211,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     }
                     continue;
                 } elseif ($message['type'] === 'cursor') {
-                    $message['data']['team'] = $currentConnection->user->team->value;
+                    $message['data']['team'] = $currentConnection->team->value;
                     $message['data']['name'] = $currentConnection->user->name;
                     if (in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED])) {
                         // Send to admin/spectator
