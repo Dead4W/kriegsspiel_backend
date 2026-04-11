@@ -29,6 +29,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @method static \Illuminate\Database\Eloquent\Builder|User whereRoomId($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereTeam($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereUpdatedAt($value)
+ * @property string|null $google_id
+ * @property string|null $email
+ * @property string|null $avatar
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereAvatar($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereEmail($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereGoogleId($value)
  * @mixin \Eloquent
  */
 class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {

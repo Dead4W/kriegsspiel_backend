@@ -1,0 +1,33 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('room_maps', function (Blueprint $table) {
+            $table->unsignedInteger('user_id')
+                ->nullable()
+                ->index('idx_room_maps_user_id');
+            $table->unique(['room_id', 'team', 'user_id'], 'uq_room_maps_room_team_user');
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('room_maps', function (Blueprint $table) {
+            $table->dropUnique('uq_room_maps_room_team_user');
+            $table->dropIndex('idx_room_maps_user_id');
+            $table->dropColumn('user_id');
+        });
+    }
+};

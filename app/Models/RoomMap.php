@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\TeamEnum;
 use \Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -26,6 +27,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereUnits($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereLogs($value)
+ * @property int|null $user_id
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RoomMapItem> $items
+ * @property-read int|null $items_count
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereUserId($value)
  * @mixin \Eloquent
  */
 class RoomMap extends Model
@@ -33,6 +38,7 @@ class RoomMap extends Model
     protected $fillable = [
         'room_id',
         'team',
+        'user_id',
         'units',
         'paint',
         'logs',
@@ -48,5 +54,29 @@ class RoomMap extends Model
     public function items(): HasMany
     {
         return $this->hasMany(RoomMapItem::class, 'room_map_id');
+    }
+
+    public function chats(): BelongsToMany
+    {
+        return $this->belongsToMany(RoomChat::class);
+    }
+
+    static public function getRoomMapForConnection(Connection $connection): ?RoomMap {
+        $room = Room::query()
+            ->where('id', $connection->room_id)
+            ->firstOrFail();
+
+        $isPlayerRoomMap = ($room->options['isPlayerRoomMap'] ?? false)
+            && in_array($connection->team, [TeamEnum::BLUE, TeamEnum::RED], true);
+
+        if ($isPlayerRoomMap && !$connection->room_map_user_id) {
+            return null;
+        }
+
+        return RoomMap::query()->firstOrCreate([
+            'room_id' => $connection->room_id,
+            'team' => $connection->team,
+            'user_id' => $isPlayerRoomMap ? $connection->room_map_user_id : null,
+        ]);
     }
 }

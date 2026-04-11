@@ -27,6 +27,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $password = $request->get['password'] ?? '';
         $key = $request->get['key'];
         $token = $request->get['token'] ?? null;
+        $targetUserId = null;
         if (!$token) {
             $authHeader = $request->header['authorization'] ?? $request->header['Authorization'] ?? null;
             if ($authHeader && str_starts_with($authHeader, 'Bearer ')) {
@@ -70,6 +71,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $team = null;
         if ($key === $room->admin_key) {
             $team = $request->get['team'];
+            $targetUserId = $request->get['user_id'] ?? null;
         } if ($key === $room->red_key) {
             $team = \App\Enums\TeamEnum::RED->value;
         } if ($key === $room->blue_key) {
@@ -90,21 +92,31 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             return;
         }
 
+        $roomMapUserId = null;
+        if (in_array($teamEnum, [TeamEnum::BLUE, TeamEnum::RED], true)) {
+            if ($key === $room->admin_key) {
+                $roomMapUserId = is_numeric($targetUserId) ? (int) $targetUserId : null;
+            } else {
+                $roomMapUserId = $userId;
+            }
+        }
+
         $currentConnection = new Connection();
         $currentConnection->id = $connectionId;
         $currentConnection->room_id = $room->id;
         $currentConnection->user_id = $userId;
+        $currentConnection->room_map_user_id = $roomMapUserId;
         $currentConnection->team = $team;
         $currentConnection->last_message_at = Carbon::now();
         $currentConnection->save();
 
-        \App\Models\RoomMap::query()
-            ->where('room_id', $room->id)
-            ->where('team', $team)
-            ->firstOrCreate([
-                'room_id' => $room->id,
-                'team' => $team
-            ]);
+        $roomMap = \App\Models\RoomMap::getRoomMapForConnection($currentConnection);
+
+        if (!$roomMap) {
+            $this->warning('Not found roomMap, disconnecting...');
+            SocketErrorAction::run($server, $connectionId, "Not found roomMap!");
+            return;
+        }
 
         $connectionsCount = Connection::count();
 
@@ -127,7 +139,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         }
 
         $messages = [];
-        foreach ($this->getAllMessages($currentConnection, $room->id) as $message) {
+        foreach ($this->getAllMessages($currentConnection, $roomMap) as $message) {
             $messages[] = $message;
             if (count($messages) >= 100) {
                 $server->push($currentConnection->id, json_encode([
@@ -146,8 +158,9 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         }
     }
 
-    protected function getAllMessages(Connection $currentConnection, int $roomId): \Generator {
+    protected function getAllMessages(Connection $currentConnection, \App\Models\RoomMap $roomMap): \Generator {
         $team = $currentConnection->team;
+        $roomId = $currentConnection->room_id;
         if ($team === \App\Enums\TeamEnum::SPECTATOR) {
             $team = \App\Enums\TeamEnum::ADMIN;
         }
@@ -155,6 +168,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         $room = \App\Models\Room::query()
             ->where('id', $roomId)
             ->firstOrFail();
+        $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
 
         yield [
             'type' => 'room',
@@ -186,11 +200,6 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             }
         }
 
-        $roomMap = \App\Models\RoomMap::query()
-            ->where('room_id', $roomId)
-            ->where('team', $team)
-            ->firstOrFail();
-
         $roomMapItems = RoomMapItem::query()
             ->where('room_map_id', $roomMap->id)
             ->lazyById(100);
@@ -212,7 +221,12 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 $team !== \App\Enums\TeamEnum::ADMIN,
                 fn ($query) => $query
                     ->where('team', $team)
-                    ->where(function ($query) {
+                    ->when($isPlayerRoomMap, function ($query) use ($roomMap) {
+                        $query->whereHas('roomMaps', function (Builder $roomMapQuery) use ($roomMap) {
+                            $roomMapQuery->where('room_maps.id', $roomMap->id);
+                        });
+                    })
+                    ->where(function ($query) use ($isPlayerRoomMap, $roomMap) {
                         $query
                             ->where('author_team', '!=', \App\Enums\TeamEnum::ADMIN)
                             ->orWhere('delivered', '1');

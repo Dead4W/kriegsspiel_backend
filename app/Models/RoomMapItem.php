@@ -12,6 +12,16 @@ use Illuminate\Database\Eloquent\Model;
  * @property array $data
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem query()
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereData($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereItemId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereRoomMapId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereType($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereUpdatedAt($value)
  * @mixin \Eloquent
  */
 class RoomMapItem extends Model
