@@ -51,7 +51,7 @@ class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {
     public function rooms(): BelongsToMany
     {
         return $this->belongsToMany(Room::class)
-            ->withPivot('team')
+            ->withPivot('team', 'is_ready')
             ->withTimestamps()
             ->using(RoomUser::class);
     }

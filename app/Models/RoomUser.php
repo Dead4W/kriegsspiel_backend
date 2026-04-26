@@ -4,12 +4,14 @@ namespace App\Models;
 
 use App\Enums\TeamEnum;
 use Illuminate\Database\Eloquent\Relations\Pivot;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
  * @property int $room_id
  * @property int $user_id
  * @property TeamEnum $team
+ * @property bool $is_ready
  * @property \Illuminate\Support\Carbon|null $created_at
  * @property \Illuminate\Support\Carbon|null $updated_at
  * @method static \Illuminate\Database\Eloquent\Builder|RoomUser newModelQuery()
@@ -28,5 +30,11 @@ class RoomUser extends Pivot {
 
     protected $casts = [
         'team' => TeamEnum::class,
+        'is_ready' => 'bool',
     ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id', 'id');
+    }
 }

@@ -37,7 +37,10 @@ class RoomController extends Controller
 
         $room->save();
 
-        $room->users()->attach($user->id, ['team' => TeamEnum::ADMIN]);
+        $room->users()->attach($user->id, [
+            'team' => TeamEnum::ADMIN,
+            'is_ready' => false,
+        ]);
 
         $roomMap = new \App\Models\RoomMap();
         $roomMap->room_id = $room->id;

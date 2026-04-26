@@ -5,6 +5,7 @@ namespace App\Socket\Callbacks;
 use App\Enums\TeamEnum;
 use App\Models\Connection;
 use App\Models\RoomMapItem;
+use App\Models\RoomUser;
 use App\Services\RoomMapItemsService;
 use App\Services\MetricsService;
 use App\Socket\Actions\GetOtherListenersAction;
@@ -200,6 +201,46 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         // Send to admin/spectator
                         $messagesByTeam[TeamEnum::ADMIN->value][] = $message;
                     }
+                } elseif ($message['type'] === 'room_user_ready') {
+                    if (!in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED], true)) {
+                        continue;
+                    }
+                    if ($room->stage !== 'planning') {
+                        continue;
+                    }
+                    if (!$currentConnection->room_map_user_id) {
+                        continue;
+                    }
+
+                    $isReady = $message['data'];
+                    if (is_array($isReady)) {
+                        $isReady = $isReady['is_ready'] ?? false;
+                    }
+                    $isReady = (bool) $isReady;
+
+                    RoomUser::query()->updateOrCreate(
+                        [
+                            'room_id' => $currentConnection->room_id,
+                            'user_id' => $currentConnection->room_map_user_id,
+                        ],
+                        [
+                            'team' => $currentConnection->team,
+                            'is_ready' => $isReady,
+                        ]
+                    );
+
+                    $readyMessage = [
+                        'type' => 'room_user_ready',
+                        'data' => [
+                            'user_id' => $currentConnection->room_map_user_id,
+                            'user' => $currentConnection->user?->name,
+                            'team' => $currentConnection->team->value,
+                            'is_ready' => $isReady,
+                        ],
+                    ];
+                    $messagesByTeam[TeamEnum::ADMIN->value][] = $readyMessage;
+                    $selfMessages[] = $readyMessage;
+                    continue;
                 } else if ($message['type'] === 'ruler') {
                     // pass backend
                 } elseif ($currentConnection->team === TeamEnum::ADMIN) {
@@ -257,6 +298,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     $roomMap,
                                 );
                             }
+
+                            $allMessages[] = $message;
+                            continue;
                         }
                     } else if ($message['type'] === 'messenger_delivery') {
                         $roomChat = \App\Models\RoomChat::query()

@@ -6,6 +6,7 @@ use App\Enums\ConnectionClientTypeEnum;
 use App\Enums\TeamEnum;
 use App\Models\Connection;
 use App\Models\RoomMapItem;
+use App\Models\RoomUser;
 use App\Models\Session;
 use App\Models\UserToken;
 use App\Services\RoomMapItemsService;
@@ -122,26 +123,58 @@ class SocketOnOpenCallback extends AbstractSocketCallback
 
         $this->info("Connection <{$currentConnection->id}> open by {$currentConnection->name}. Total connections: {$connectionsCount}");
         $connectionIds = GetOtherListenersAction::run($currentConnection, [TeamEnum::ADMIN, TeamEnum::SPECTATOR]);
+        $isReady = null;
+        if (
+            $room->stage === 'planning'
+            && in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)
+            && $currentConnection->room_map_user_id
+        ) {
+            $isReady = (bool) RoomUser::query()
+                ->where('room_id', $currentConnection->room_id)
+                ->where('user_id', $currentConnection->room_map_user_id)
+                ->value('is_ready');
+        }
+        $newConnectionData = [
+            'id' => $currentConnection->id,
+            'team' => $currentConnection->team,
+            'user' => $currentConnection->user?->name,
+        ];
+        if ($room->stage === 'planning' && in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)) {
+            $newConnectionData['user_id'] = $currentConnection->room_map_user_id;
+            $newConnectionData['is_ready'] = $isReady;
+        }
         foreach ($connectionIds as $connectionId) {
+            $messages = [
+                [
+                    'type' => 'connection_new',
+                    'data' => $newConnectionData,
+                ]
+            ];
+            if (
+                $room->stage === 'planning'
+                && in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)
+                && $currentConnection->room_map_user_id
+            ) {
+                $messages[] = [
+                    'type' => 'room_user_ready',
+                    'data' => [
+                        'user_id' => $currentConnection->room_map_user_id,
+                        'user' => $currentConnection->user?->name,
+                        'team' => $currentConnection->team->value,
+                        'is_ready' => (bool) $isReady,
+                    ],
+                ];
+            }
             $server->push($connectionId, json_encode([
                 'type' => 'messages',
-                'messages' => [
-                    [
-                        'type' => 'connection_new',
-                        'data' => [
-                            'id' => $currentConnection->id,
-                            'team' => $currentConnection->team,
-                            'user' => $currentConnection->user?->name,
-                        ],
-                    ]
-                ],
+                'messages' => $messages,
             ]));
         }
 
         $messages = [];
         foreach ($this->getAllMessages($currentConnection, $roomMap) as $message) {
             $messages[] = $message;
-            if (count($messages) >= 100) {
+            if (count($messages) >= 30) {
                 $server->push($currentConnection->id, json_encode([
                     'type' => 'messages',
                     'messages' => $messages,
@@ -187,20 +220,94 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             ],
         ];
 
+        if ($room->stage === 'planning') {
+            if (in_array($currentConnection->team, [TeamEnum::ADMIN, TeamEnum::SPECTATOR], true)) {
+                $readyRoomUsers = RoomUser::query()
+                    ->with('user')
+                    ->where('room_id', $currentConnection->room_id)
+                    ->whereIn('team', [TeamEnum::RED, TeamEnum::BLUE])
+                    ->get(['user_id', 'team', 'is_ready']);
+                foreach ($readyRoomUsers as $readyRoomUser) {
+                    yield [
+                        'type' => 'room_user_ready',
+                        'data' => [
+                            'user_id' => $readyRoomUser->user_id,
+                            'user' => $readyRoomUser->user?->name,
+                            'team' => $readyRoomUser->team->value,
+                            'is_ready' => (bool) $readyRoomUser->is_ready,
+                        ],
+                    ];
+                }
+            } elseif (
+                in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)
+                && $currentConnection->room_map_user_id
+            ) {
+                $selfReady = RoomUser::query()
+                    ->with('user')
+                    ->where('room_id', $currentConnection->room_id)
+                    ->where('user_id', $currentConnection->room_map_user_id)
+                    ->where('team', $currentConnection->team)
+                    ->first(['user_id', 'team', 'is_ready']);
+                if ($selfReady) {
+                    yield [
+                        'type' => 'room_user_ready',
+                        'data' => [
+                            'user_id' => $selfReady->user_id,
+                            'user' => $selfReady->user?->name,
+                            'team' => $selfReady->team->value,
+                            'is_ready' => (bool) $selfReady->is_ready,
+                        ],
+                    ];
+                }
+            }
+        }
+
         if (in_array($currentConnection->team, [TeamEnum::ADMIN, TeamEnum::SPECTATOR])) {
             $connections = Connection::query()
                 ->with('user')
                 ->where('id', '!=', $currentConnection->id)
                 ->where('room_id', $currentConnection->room_id)
                 ->get();
+            $isReadyByUserId = [];
+            if ($room->stage === 'planning') {
+                $playerUserIds = $connections
+                    ->whereIn('team', [TeamEnum::RED, TeamEnum::BLUE])
+                    ->pluck('room_map_user_id')
+                    ->filter()
+                    ->map(fn ($userId) => (int) $userId)
+                    ->unique()
+                    ->values()
+                    ->all();
+                if ($playerUserIds) {
+                    $isReadyByUserId = RoomUser::query()
+                        ->where('room_id', $currentConnection->room_id)
+                        ->whereIn('user_id', $playerUserIds)
+                        ->pluck('is_ready', 'user_id')
+                        ->map(fn ($isReady) => (bool) $isReady)
+                        ->all();
+                }
+            }
             foreach ($connections as $connection) {
+                $isReady = null;
+                if (
+                    $room->stage === 'planning'
+                    && in_array($connection->team, [TeamEnum::RED, TeamEnum::BLUE], true)
+                    && $connection->room_map_user_id
+                ) {
+                    $isReady = $isReadyByUserId[$connection->room_map_user_id] ?? false;
+                }
+                $connectionData = [
+                    'id' => $connection->id,
+                    'team' => $connection->team,
+                    'user' => $connection->user?->name,
+                ];
+                if ($room->stage === 'planning' && in_array($connection->team, [TeamEnum::RED, TeamEnum::BLUE], true)) {
+                    $connectionData['user_id'] = $connection->room_map_user_id;
+                    $connectionData['is_ready'] = $isReady;
+                }
                 yield [
                     'type' => 'connection_new',
-                    'data' => [
-                        'id' => $connection->id,
-                        'team' => $connection->team,
-                        'user' => $connection->user?->name,
-                    ],
+                    'data' => $connectionData,
                 ];
             }
         }

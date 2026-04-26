@@ -63,7 +63,7 @@ class Room extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class)
-            ->withPivot('team')
+            ->withPivot('team', 'is_ready')
             ->withTimestamps()
             ->using(RoomUser::class);
     }
