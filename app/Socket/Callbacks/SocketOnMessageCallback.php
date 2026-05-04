@@ -189,6 +189,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $message['data']['time'] = $room->ingame_time->format('Y-m-d H:i:s');
                     $message['data']['created_at'] = $roomChat->created_at?->format('Y-m-d H:i:s');
                     $message['data']['delivered_at'] = null;
+                    $message['data']['unitFallbackTitles'] = $this->buildChatUnitFallbackTitles(
+                        $room->id,
+                        (array) ($message['data']['unitIds'] ?? []),
+                    );
                     if ($currentConnection->team === TeamEnum::ADMIN) {
                         $goodMessages[] = $message;
                     } else {
@@ -247,6 +251,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             'team' => $roomChat->team,
                             'status' => $roomChat->status,
                             'delivered' => (bool) $roomChat->delivered,
+                            'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
+                                $room->id,
+                                (array) $roomChat->unitIds,
+                            ),
                         ],
                     ];
 
@@ -446,6 +454,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => true,
+                                'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
+                                    $room->id,
+                                    (array) $roomChat->unitIds,
+                                ),
                             ],
                         ];
                         if (($room->options['isPlayerRoomMap'] ?? false)) {
@@ -708,6 +720,38 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 }
             }
         }
+    }
+
+    private function buildChatUnitFallbackTitles(int $roomId, array $unitIds): array
+    {
+        $normalizedUnitIds = array_values(array_unique(array_filter(
+            array_map(fn ($unitId) => (string) $unitId, $unitIds),
+            fn (string $unitId) => $unitId !== '',
+        )));
+        if (!$normalizedUnitIds) {
+            return [];
+        }
+
+        $adminRoomMapId = \App\Models\RoomMap::query()
+            ->where('room_id', $roomId)
+            ->where('team', TeamEnum::ADMIN)
+            ->value('id');
+        if (!$adminRoomMapId) {
+            return [];
+        }
+
+        return RoomMapItem::query()
+            ->where('room_map_id', $adminRoomMapId)
+            ->where('type', RoomMapItemsService::TYPE_UNIT)
+            ->whereIn('item_id', $normalizedUnitIds)
+            ->get(['item_id', 'data'])
+            ->reduce(function (array $carry, RoomMapItem $roomMapItem) {
+                $label = isset($roomMapItem->data['label']) ? trim((string) $roomMapItem->data['label']) : '';
+                if ($label !== '') {
+                    $carry[(string) $roomMapItem->item_id] = $label;
+                }
+                return $carry;
+            }, []);
     }
 
 }

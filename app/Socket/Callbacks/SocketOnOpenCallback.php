@@ -421,11 +421,39 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     'delivered_at' => $chatMessage->delivered_at?->format('Y-m-d H:i:s'),
                     'delivered' => (bool) $chatMessage->delivered,
                     'unitIds' => $chatMessage->unitIds,
+                    'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
+                        (int) $adminRoomMap->id,
+                        (array) $chatMessage->unitIds,
+                    ),
                 ],
                 'meta' => [
                     'ignore' => true,
                 ]
             ];
         }
+    }
+
+    private function buildChatUnitFallbackTitles(int $adminRoomMapId, array $unitIds): array
+    {
+        $normalizedUnitIds = array_values(array_unique(array_filter(
+            array_map(fn ($unitId) => (string) $unitId, $unitIds),
+            fn (string $unitId) => $unitId !== '',
+        )));
+        if (!$normalizedUnitIds) {
+            return [];
+        }
+
+        return RoomMapItem::query()
+            ->where('room_map_id', $adminRoomMapId)
+            ->where('type', RoomMapItemsService::TYPE_UNIT)
+            ->whereIn('item_id', $normalizedUnitIds)
+            ->get(['item_id', 'data'])
+            ->reduce(function (array $carry, RoomMapItem $roomMapItem) {
+                $label = isset($roomMapItem->data['label']) ? trim((string) $roomMapItem->data['label']) : '';
+                if ($label !== '') {
+                    $carry[(string) $roomMapItem->item_id] = $label;
+                }
+                return $carry;
+            }, []);
     }
 }
