@@ -353,7 +353,8 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     })
             )
             ->where('room_id', $roomId)
-            ->orderBy('ingame_time', 'asc')
+            ->orderByRaw('COALESCE(delivered_at, created_at) asc')
+            ->orderBy('id', 'asc')
             ->lazy(100);
 
         /** @var \App\Models\RoomChat $chatMessage */
@@ -368,6 +369,9 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     'team' => $chatMessage->team,
                     'text' => $chatMessage->data,
                     'time' => $chatMessage->ingame_time->format('Y-m-d H:i:s'),
+                    'created_at' => $chatMessage->created_at?->format('Y-m-d H:i:s'),
+                    'delivered_at' => $chatMessage->delivered_at?->format('Y-m-d H:i:s'),
+                    'delivered' => (bool) $chatMessage->delivered,
                     'unitIds' => $chatMessage->unitIds,
                 ],
                 'meta' => [

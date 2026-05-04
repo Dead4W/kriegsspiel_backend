@@ -183,6 +183,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $roomChat->roomMaps()->syncWithoutDetaching([$roomMap->id]);
                     $message['data']['author_team'] = $currentConnection->team;
                     $message['data']['time'] = $room->ingame_time->format('Y-m-d H:i:s');
+                    $message['data']['created_at'] = $roomChat->created_at?->format('Y-m-d H:i:s');
+                    $message['data']['delivered_at'] = null;
                     if ($currentConnection->team === TeamEnum::ADMIN) {
                         $goodMessages[] = $message;
                     } else {
@@ -317,6 +319,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                         $roomChat->ingame_time = $message['data']['time'];
                         $roomChat->delivered = true;
+                        $roomChat->delivered_at = Carbon::now();
                         $roomChat->save();
 
                         $roomMapIds = [];
@@ -351,6 +354,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'unitIds' => $roomChat->unitIds,
                                 'text' => $roomChat->data,
                                 'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
+                                'created_at' => $roomChat->created_at?->format('Y-m-d H:i:s'),
+                                'delivered_at' => $roomChat->delivered_at?->format('Y-m-d H:i:s'),
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => true,

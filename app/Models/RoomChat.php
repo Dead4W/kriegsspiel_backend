@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property array $unitIds
  * @property string $status
  * @property bool $delivered
+ * @property \Illuminate\Support\Carbon|null $delivered_at
  * @property TeamEnum $team
  * @property string $data
  * @property \Illuminate\Support\Carbon $ingame_time
@@ -52,6 +53,7 @@ class RoomChat extends Model
         'team' => TeamEnum::class,
         'unitIds' => 'array',
         'ingame_time' => 'datetime',
+        'delivered_at' => 'datetime',
     ];
 
     public function roomMaps(): BelongsToMany
