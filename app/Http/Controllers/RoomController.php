@@ -110,7 +110,10 @@ class RoomController extends Controller
         $result = [
             'uuid'       => $room->uuid,
             'team'       => $team,
+            'stage'      => $room->stage,
             'name'       => $room->name,
+            'weather'    => $room->weather,
+            'ingame_time'=> $room->ingame_time?->format('Y-m-d H:i:s'),
             'admin_id'   => $room->admin_id,
             'options'    => $room->options,
             'created_at' => $room->created_at,
