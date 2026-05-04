@@ -196,6 +196,67 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         }
                     }
                     continue;
+                } elseif ($message['type'] === 'chat_edit') {
+                    $messageId = (string) ($message['data']['id'] ?? '');
+                    $messageText = (string) ($message['data']['text'] ?? '');
+                    if ($messageId === '' || trim($messageText) === '') {
+                        continue;
+                    }
+
+                    $roomChat = \App\Models\RoomChat::query()
+                        ->where('room_id', $room->id)
+                        ->where('uuid', $messageId)
+                        ->first();
+                    if (!$roomChat) {
+                        $this->error("RoomChat not found for edit '{$messageId}'");
+                        continue;
+                    }
+
+                    if ($roomChat->ingame_time->format('Y-m-d H:i:s') !== $room->ingame_time->format('Y-m-d H:i:s')) {
+                        continue;
+                    }
+
+                    if (
+                        $roomChat->author_team !== $currentConnection->team
+                        || $roomChat->author !== $currentConnection->user?->name
+                    ) {
+                        continue;
+                    }
+
+                    $roomChat->data = $messageText;
+                    $roomChat->save();
+
+                    $chatMessage = [
+                        'type' => 'chat',
+                        'data' => [
+                            'id' => $roomChat->uuid,
+                            'author' => $roomChat->author,
+                            'author_team' => $roomChat->author_team,
+                            'unitIds' => $roomChat->unitIds,
+                            'text' => $roomChat->data,
+                            'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
+                            'created_at' => $roomChat->created_at?->format('Y-m-d H:i:s'),
+                            'delivered_at' => $roomChat->delivered_at?->format('Y-m-d H:i:s'),
+                            'team' => $roomChat->team,
+                            'status' => $roomChat->status,
+                            'delivered' => (bool) $roomChat->delivered,
+                        ],
+                    ];
+
+                    if ($roomChat->author_team !== TeamEnum::ADMIN) {
+                        $messagesByTeam[TeamEnum::ADMIN->value][] = $chatMessage;
+                    }
+
+                    $chatRoomMaps = $roomChat->roomMaps()->get(['room_maps.id', 'team', 'user_id']);
+                    foreach ($chatRoomMaps as $chatRoomMap) {
+                        if ($chatRoomMap->user_id) {
+                            $messagesByTeamUser[$chatRoomMap->team->value][$chatRoomMap->user_id][] = $chatMessage;
+                        } else {
+                            $messagesByTeam[$chatRoomMap->team->value][] = $chatMessage;
+                        }
+                    }
+
+                    continue;
                 } elseif ($message['type'] === 'cursor') {
                     $message['data']['team'] = $currentConnection->team->value;
                     $message['data']['name'] = $currentConnection->user->name;
