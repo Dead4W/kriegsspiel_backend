@@ -169,8 +169,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         ->where('item_id', $id)
                         ->delete();
                 } elseif ($message['type'] === 'chat') {
+                    $chatAuthorId = $currentConnection->user_id ?: null;
                     $roomChat = new \App\Models\RoomChat();
                     $roomChat->uuid = $message['data']['id'];
+                    $roomChat->user_id = $chatAuthorId;
                     $roomChat->author = $message['data']['author'];
                     $roomChat->author_team = $currentConnection->team;
                     $roomChat->unitIds = (array) $message['data']['unitIds'];
@@ -181,7 +183,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $roomChat->room_id = $currentConnection->room_id;
                     $roomChat->save();
                     $roomChat->roomMaps()->syncWithoutDetaching([$roomMap->id]);
+                    $message['data']['author_id'] = $chatAuthorId;
                     $message['data']['author_team'] = $currentConnection->team;
+                    $message['data']['author_avatar'] = $currentConnection->user?->avatar;
                     $message['data']['time'] = $room->ingame_time->format('Y-m-d H:i:s');
                     $message['data']['created_at'] = $roomChat->created_at?->format('Y-m-d H:i:s');
                     $message['data']['delivered_at'] = null;
@@ -216,10 +220,11 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         continue;
                     }
 
-                    if (
-                        $roomChat->author_team !== $currentConnection->team
-                        || $roomChat->author !== $currentConnection->user?->name
-                    ) {
+                    $canEditByUserId = $roomChat->user_id !== null
+                        && (int) $roomChat->user_id === (int) $currentConnection->user_id;
+                    $canEditByLegacyIdentity = $roomChat->author_team === $currentConnection->team
+                        && $roomChat->author === $currentConnection->user?->name;
+                    if (!$canEditByUserId && !$canEditByLegacyIdentity) {
                         continue;
                     }
 
@@ -231,7 +236,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         'data' => [
                             'id' => $roomChat->uuid,
                             'author' => $roomChat->author,
+                            'author_id' => $roomChat->user_id,
                             'author_team' => $roomChat->author_team,
+                            'author_avatar' => $currentConnection->user?->avatar,
                             'unitIds' => $roomChat->unitIds,
                             'text' => $roomChat->data,
                             'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
@@ -406,12 +413,31 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $roomChat->roomMaps()->syncWithoutDetaching($roomMapIds);
                         }
 
+                        $authorId = $roomChat->user_id ? (int) $roomChat->user_id : null;
+                        if (!$authorId) {
+                            $authorId = RoomUser::query()
+                                ->where('room_id', $roomChat->room_id)
+                                ->where('team', $roomChat->author_team)
+                                ->whereHas('user', function ($query) use ($roomChat) {
+                                    $query->where('name', $roomChat->author);
+                                })
+                                ->value('user_id');
+                            if ($authorId) {
+                                $roomChat->user_id = $authorId;
+                                $roomChat->save();
+                            }
+                        }
+
                         $chatMessage = [
                             'type' => 'chat',
                             'data' => [
                                 'id' => $roomChat->uuid,
                                 'author' => $roomChat->author,
+                                'author_id' => $authorId,
                                 'author_team' => $roomChat->author_team,
+                                'author_avatar' => $authorId
+                                    ? \App\Models\User::query()->where('id', $authorId)->value('avatar')
+                                    : null,
                                 'unitIds' => $roomChat->unitIds,
                                 'text' => $roomChat->data,
                                 'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),

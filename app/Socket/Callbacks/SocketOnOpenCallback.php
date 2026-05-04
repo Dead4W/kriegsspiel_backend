@@ -357,14 +357,62 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             ->orderBy('id', 'asc')
             ->lazy(100);
 
+        $authorAvatars = \App\Models\User::query()
+            ->whereIn('id', function ($query) use ($roomId) {
+                $query->from('room_chats')
+                    ->select('user_id')
+                    ->where('room_id', $roomId)
+                    ->whereNotNull('user_id')
+                    ->distinct();
+            })
+            ->get(['id', 'avatar'])
+            ->reduce(function (array $carry, \App\Models\User $user) {
+                $carry[(int) $user->id] = $user->avatar;
+                return $carry;
+            }, []);
+
+        $authorIdentityMap = RoomUser::query()
+            ->where('room_id', $roomId)
+            ->with('user:id,name,avatar')
+            ->get()
+            ->reduce(function (array $carry, RoomUser $roomUser) {
+                $authorTeam = $roomUser->team instanceof TeamEnum
+                    ? $roomUser->team->value
+                    : (string) $roomUser->team;
+                $authorName = $roomUser->user?->name;
+                if (!$authorName) {
+                    return $carry;
+                }
+                $key = "{$authorTeam}::{$authorName}";
+                $carry[$key] = [
+                    'author_id' => $roomUser->user_id,
+                    'author_avatar' => $roomUser->user?->avatar,
+                ];
+                return $carry;
+            }, []);
+
         /** @var \App\Models\RoomChat $chatMessage */
         foreach ($chatMessages as $chatMessage) {
+            $authorId = $chatMessage->user_id ? (int) $chatMessage->user_id : null;
+            $authorAvatar = $authorId ? ($authorAvatars[$authorId] ?? null) : null;
+            if (!$authorId || !$authorAvatar) {
+                $authorTeam = $chatMessage->author_team instanceof TeamEnum
+                    ? $chatMessage->author_team->value
+                    : (string) $chatMessage->author_team;
+                $identity = $authorIdentityMap["{$authorTeam}::{$chatMessage->author}"] ?? null;
+                if ($identity) {
+                    $authorId = $authorId ?: ($identity['author_id'] ?? null);
+                    $authorAvatar = $authorAvatar ?: ($identity['author_avatar'] ?? null);
+                }
+            }
             yield [
                 'type' => 'chat',
                 'data' => [
                     'id' => $chatMessage->uuid,
                     'author' => $chatMessage->author,
+                    'author_id' => $authorId,
                     'author_team' => $chatMessage->author_team,
+                    'author_avatar' => $authorAvatar,
                     'status' => $chatMessage->status,
                     'team' => $chatMessage->team,
                     'text' => $chatMessage->data,
