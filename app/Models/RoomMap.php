@@ -31,6 +31,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RoomMapItem> $items
  * @property-read int|null $items_count
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMap whereUserId($value)
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RoomChat> $chats
+ * @property-read int|null $chats_count
  * @mixin \Eloquent
  */
 class RoomMap extends Model

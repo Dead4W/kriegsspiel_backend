@@ -23,6 +23,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomUser whereTeam($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomUser whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomUser whereUserId($value)
+ * @property-read \App\Models\User $user
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomUser whereIsReady($value)
  * @mixin \Eloquent
  */
 class RoomUser extends Pivot {

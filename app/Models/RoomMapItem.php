@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereRoomMapId($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereType($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereUpdatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomMapItem whereShared($value)
  * @mixin \Eloquent
  */
 class RoomMapItem extends Model

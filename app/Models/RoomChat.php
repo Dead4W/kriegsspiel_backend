@@ -40,6 +40,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereUpdatedAt($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereUuid($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereDelivered($value)
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\RoomMap> $roomMaps
+ * @property-read int|null $room_maps_count
+ * @property-read \App\Models\User|null $user
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereDeliveredAt($value)
  * @mixin \Eloquent
  */
 class RoomChat extends Model
