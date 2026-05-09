@@ -700,6 +700,39 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             }
                         }
                         continue;
+                    } else if ($message['type'] === 'direct_view_objects') {
+                        $roomMapsTeam = \App\Models\RoomMap::query()
+                            ->where('room_id', $currentConnection->room_id)
+                            ->where('team', $message['team'])
+                            ->get();
+
+                        $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
+                        foreach ($roomMapsTeam as $roomMapTeam) {
+                            $roomMapMessageDatas = [];
+                            foreach ((array) ($message['data'] ?? []) as $messageData) {
+                                if ($isPlayerRoomMap && $roomMapTeam->user_id) {
+                                    $seenRoomUserIds = array_filter(
+                                        (array) ($messageData['seenRoomUserIds'] ?? []),
+                                        fn ($id) => $id !== null && $id !== ''
+                                    );
+                                    $seenRoomUserIds = array_map('intval', $seenRoomUserIds);
+                                    if (!$seenRoomUserIds || !in_array((int) $roomMapTeam->user_id, $seenRoomUserIds, true)) {
+                                        continue;
+                                    }
+                                }
+                                unset($messageData['seenRoomUserIds']);
+                                $roomMapMessageDatas[] = $messageData;
+                            }
+
+                            $roomMapMessage = $message;
+                            $roomMapMessage['data'] = $roomMapMessageDatas;
+                            if ($roomMapTeam->user_id) {
+                                $messagesByTeamUser[$message['team']][$roomMapTeam->user_id][] = $roomMapMessage;
+                            } else {
+                                $messagesByTeam[$message['team']][] = $roomMapMessage;
+                            }
+                        }
+                        continue;
                     } else if ($message['type'] === 'weather') {
                         $room->weather = $message['data'];
                         $allMessages[] = $message;
