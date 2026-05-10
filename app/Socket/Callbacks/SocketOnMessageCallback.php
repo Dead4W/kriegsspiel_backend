@@ -257,10 +257,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         ],
                     ];
 
-                    if ($roomChat->author_team !== TeamEnum::ADMIN) {
-                        $messagesByTeam[TeamEnum::ADMIN->value][] = $chatMessage;
-                    }
-
                     $chatRoomMaps = $roomChat->roomMaps()->get(['room_maps.id', 'team', 'user_id']);
                     foreach ($chatRoomMaps as $chatRoomMap) {
                         if ($chatRoomMap->user_id) {
