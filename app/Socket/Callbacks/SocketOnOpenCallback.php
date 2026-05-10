@@ -354,13 +354,6 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                             ->orWhere('delivered', '1');
                     })
             )
-            ->when($team === \App\Enums\TeamEnum::ADMIN, function ($query) use ($room) {
-                $query->where(function (Builder $query) use ($room) {
-                    $query
-                        ->where('ingame_time', '<', $room->ingame_time)
-                        ->orWhere('author_team', \App\Enums\TeamEnum::ADMIN);
-                });
-            })
             ->where('room_id', $roomId)
             ->orderByRaw('COALESCE(delivered_at, created_at) asc')
             ->orderBy('id', 'asc')

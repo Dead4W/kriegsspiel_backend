@@ -4,6 +4,7 @@ namespace App\Socket\Callbacks;
 
 use App\Enums\TeamEnum;
 use App\Models\Connection;
+use App\Models\RoomMap;
 use App\Models\RoomMapItem;
 use App\Models\RoomUser;
 use App\Services\RoomMapItemsService;
@@ -16,6 +17,12 @@ use OpenSwoole\WebSocket\Server;
 
 class SocketOnMessageCallback extends AbstractSocketCallback
 {
+    private const MAP_SYNC_COMMANDS = [
+        '/sync',
+        '/sync-map',
+        '/sync-maps',
+        '/maps-sync',
+    ];
 
     public function __invoke(Server $server, Frame $frame) {
         $start = microtime(true);
@@ -200,6 +207,15 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $messagesByTeamUser[$currentConnection->team->value][$currentConnection->room_map_user_id][] = $message;
                         } else {
                             $messagesByTeam[$currentConnection->team->value][] = $message;
+                        }
+                        if ($room->stage === 'planning') {
+                            $adminRoomMapId = (int) RoomMap::query()
+                                ->where('room_id', $roomChat->room_id)
+                                ->where('team', TeamEnum::ADMIN)
+                                ->value('id');
+
+                            $messagesByTeam[TeamEnum::ADMIN->value][] = $message;
+                            $roomChat->roomMaps()->syncWithoutDetaching([$adminRoomMapId]);
                         }
                     }
                     continue;
@@ -495,6 +511,49 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $roomChat->roomMaps()->syncWithoutDetaching($roomMapIds);
                         }
 
+                        $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
+                        if ($isPlayerRoomMap && $roomMapIds && $this->isMapSyncCommand($roomChat)) {
+                            $adminRoomMapId = (int) RoomMap::query()
+                                ->where('room_id', $roomChat->room_id)
+                                ->where('team', TeamEnum::ADMIN)
+                                ->value('id');
+
+                            if ($adminRoomMapId > 0) {
+                                $targetRoomMaps = RoomMap::query()
+                                    ->whereIn('id', $roomMapIds)
+                                    ->get(['id', 'user_id', 'team']);
+
+                                foreach ($targetRoomMaps as $targetRoomMap) {
+                                    $targetRoomUserId = (int) ($targetRoomMap->user_id ?? 0);
+                                    if ($targetRoomUserId <= 0) {
+                                        continue;
+                                    }
+
+                                    $this->syncUnitsBetweenRoomMaps(
+                                        $adminRoomMapId,
+                                        (int) $targetRoomMap->id,
+                                        $targetRoomUserId
+                                    );
+
+                                    $targetUnits = RoomMapItem::query()
+                                        ->where('room_map_id', (int) $targetRoomMap->id)
+                                        ->where('type', RoomMapItemsService::TYPE_UNIT)
+                                        ->get()
+                                        ->map(fn (RoomMapItem $item) => $item->data)
+                                        ->filter(fn ($data) => is_array($data))
+                                        ->values()
+                                        ->all();
+
+                                    foreach ($targetUnits as $targetUnit) {
+                                        $messagesByTeamUser[$targetRoomMap->team->value][$targetRoomUserId][] = [
+                                            'type' => 'unit',
+                                            'data' => $targetUnit,
+                                        ];
+                                    }
+                                }
+                            }
+                        }
+
                         $authorId = $roomChat->user_id ? (int) $roomChat->user_id : null;
                         if (!$authorId) {
                             $authorId = RoomUser::query()
@@ -707,12 +766,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $roomMapMessageDatas = [];
                             foreach ((array) ($message['data'] ?? []) as $messageData) {
                                 if ($isPlayerRoomMap && $roomMapTeam->user_id) {
+                                    $rawSeenRoomUserIds = (array) ($messageData['seenRoomUserIds'] ?? []);
                                     $seenRoomUserIds = array_filter(
-                                        (array) ($messageData['seenRoomUserIds'] ?? []),
+                                        $rawSeenRoomUserIds,
                                         fn ($id) => $id !== null && $id !== ''
                                     );
                                     $seenRoomUserIds = array_map('intval', $seenRoomUserIds);
-                                    if (!$seenRoomUserIds || !in_array((int) $roomMapTeam->user_id, $seenRoomUserIds, true)) {
+
+                                    // For direct-view objects an empty/missing seen list means "no per-user restriction".
+                                    if (
+                                        $seenRoomUserIds
+                                        && !in_array((int) $roomMapTeam->user_id, $seenRoomUserIds, true)
+                                    ) {
                                         continue;
                                     }
                                 }
@@ -859,6 +924,73 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 }
                 return $carry;
             }, []);
+    }
+
+    private function isMapSyncCommand(\App\Models\RoomChat $roomChat): bool
+    {
+        $text = trim(mb_strtolower((string) ($roomChat->data ?? '')));
+        return in_array($text, self::MAP_SYNC_COMMANDS, true);
+    }
+
+    private function syncUnitsBetweenRoomMaps(
+        int $firstRoomMapId,
+        int $secondRoomMapId,
+        int $roomMapUserId
+    ): void {
+        if ($firstRoomMapId <= 0 || $secondRoomMapId <= 0 || $firstRoomMapId === $secondRoomMapId || $roomMapUserId <= 0) {
+            return;
+        }
+
+        $firstUnits = $this->loadCopyableUnitsForRoomUser($firstRoomMapId, $roomMapUserId);
+        $secondUnits = $this->loadCopyableUnitsForRoomUser($secondRoomMapId, $roomMapUserId);
+
+        $this->copyUnitsToRoomMap($firstUnits, $secondRoomMapId);
+        $this->copyUnitsToRoomMap($secondUnits, $firstRoomMapId);
+    }
+
+    /**
+     * @return RoomMapItem[]
+     */
+    private function loadCopyableUnitsForRoomUser(int $roomMapId, int $roomMapUserId): array
+    {
+        return RoomMapItem::query()
+            ->where('room_map_id', $roomMapId)
+            ->where('type', RoomMapItemsService::TYPE_UNIT)
+            ->get()
+            ->filter(function (RoomMapItem $item) use ($roomMapUserId): bool {
+                $unit = $item->data;
+                if (!is_array($unit)) {
+                    return false;
+                }
+
+                $unitType = strtolower((string) ($unit['type'] ?? ''));
+                if (in_array($unitType, ['messenger'], true)) {
+                    return false;
+                }
+
+                return (int) ($unit['roomMapUserId'] ?? 0) === $roomMapUserId;
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param RoomMapItem[] $units
+     */
+    private function copyUnitsToRoomMap(array $units, int $targetRoomMapId): void
+    {
+        foreach ($units as $unitItem) {
+            RoomMapItem::query()->updateOrCreate(
+                [
+                    'room_map_id' => $targetRoomMapId,
+                    'type' => RoomMapItemsService::TYPE_UNIT,
+                    'item_id' => (string) $unitItem->item_id,
+                ],
+                [
+                    'data' => $unitItem->data,
+                ]
+            );
+        }
     }
 
 }
