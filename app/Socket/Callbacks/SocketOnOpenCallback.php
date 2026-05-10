@@ -313,13 +313,15 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         }
 
         $roomMapItems = RoomMapItem::query()
-            ->where('room_map_id', $roomMap->id)
-            ->when($adminRoomMap->id !== $roomMap->id, function (Builder $query) use ($adminRoomMap) {
-                $query->orWhere(function (Builder $query) use ($adminRoomMap) {
-                    $query
-                        ->where('room_map_id', $adminRoomMap->id)
-                        ->where('shared', true);
-                });
+            ->where(function (Builder $query) use ($roomMap, $adminRoomMap) {
+                $query->where('room_map_id', $roomMap->id);
+                if ($adminRoomMap->id !== $roomMap->id) {
+                    $query->orWhere(function (Builder $query) use ($adminRoomMap) {
+                        $query
+                            ->where('room_map_id', $adminRoomMap->id)
+                            ->where('shared', true);
+                    });
+                }
             })
             ->orderBy('id')
             ->lazyById(100);
