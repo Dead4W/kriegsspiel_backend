@@ -34,6 +34,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @method static \Illuminate\Database\Eloquent\Builder|User whereAvatar($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereEmail($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereGoogleId($value)
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\ResourcePack> $resourcePacks
+ * @property-read int|null $resource_packs_count
  * @mixin \Eloquent
  */
 class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {
@@ -59,6 +61,11 @@ class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {
     public function tokens(): HasMany
     {
         return $this->hasMany(UserToken::class, 'user_id', 'id');
+    }
+
+    public function resourcePacks(): HasMany
+    {
+        return $this->hasMany(ResourcePack::class, 'user_id', 'id');
     }
 
     public function getAuthIdentifierName()

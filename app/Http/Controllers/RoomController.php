@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\TeamEnum;
+use App\Models\ResourcePack;
 use App\Models\Room;
 use App\Models\RoomMap;
 use App\Models\User;
@@ -18,10 +19,26 @@ class RoomController extends Controller
             'password'  => 'nullable|string|max:255',
             'options'   => 'required|array',
             'time'      => 'required|string|date_format:Y-m-d H:i:s',
+            'resource_pack_public_id' => 'nullable|string|max:64',
         ]);
 
         /** @var User $user */
         $user = auth()->user();
+        $selectedResourcePack = null;
+        if (!empty($data['resource_pack_public_id'])) {
+            $selectedResourcePack = ResourcePack::query()
+                ->where('public_id', $data['resource_pack_public_id'])
+                ->first();
+            if (!$selectedResourcePack) {
+                return response()->json([
+                    'message' => 'resource_pack_not_found',
+                ], 404);
+            }
+        }
+
+        if (!$selectedResourcePack){
+            $selectedResourcePack = (new ResourcePackController())->getDefaultPack();
+        }
 
         $room = new Room();
         $room->uuid = Str::uuid()->toString();
@@ -33,6 +50,7 @@ class RoomController extends Controller
         $room->red_key = Str::random(32);
         $room->blue_key = Str::random(32);
         $room->admin_id = $user->id;
+        $room->resource_pack_id = $selectedResourcePack->id;
         $room->options = $data['options'];
 
         $room->save();
@@ -62,6 +80,7 @@ class RoomController extends Controller
         return response()->json([
             'uuid' => $room->uuid,
             'admin_key' => $room->admin_key,
+            'resource_pack_id' => $room->resource_pack_id,
         ], 201);
     }
 
@@ -107,6 +126,11 @@ class RoomController extends Controller
             }
         }
 
+        $resourcePackUrl = $room->options['resourcePackUrl'] ?? null;
+        if ($room->resourcePack) {
+            $resourcePackUrl = url('/api/resource-pack/' . $room->resourcePack->public_id);
+        }
+
         $result = [
             'uuid'       => $room->uuid,
             'team'       => $team,
@@ -116,6 +140,9 @@ class RoomController extends Controller
             'ingame_time'=> $room->ingame_time?->format('Y-m-d H:i:s'),
             'admin_id'   => $room->admin_id,
             'options'    => $room->options,
+            'resource_pack_id' => $room->resource_pack_id,
+            'resource_pack_public_id' => $room->resourcePack?->public_id,
+            'resource_pack_url' => $resourcePackUrl,
             'created_at' => $room->created_at,
             'updated_at' => $room->updated_at,
         ];

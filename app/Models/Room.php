@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
@@ -44,6 +45,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $height_map_url
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereHeightMapUrl($value)
  * @method static \Illuminate\Database\Eloquent\Builder|Room whereMapUrl($value)
+ * @property-read \App\Models\ResourcePack|null $resourcePack
+ * @property int|null $resource_pack_id
+ * @method static \Illuminate\Database\Eloquent\Builder|Room whereResourcePackId($value)
  * @mixin \Eloquent
  */
 class Room extends Model
@@ -66,5 +70,10 @@ class Room extends Model
             ->withPivot('team', 'is_ready')
             ->withTimestamps()
             ->using(RoomUser::class);
+    }
+
+    public function resourcePack(): BelongsTo
+    {
+        return $this->belongsTo(ResourcePack::class, 'resource_pack_id', 'id');
     }
 }

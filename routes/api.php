@@ -26,6 +26,8 @@ Route::middleware(DisableCors::class)->group(function () {
     Route::middleware([
         DisableCors::class,
     ])->get('proxy/image', [\App\Http\Controllers\ProxyController::class, 'image']);
+    Route::get('resource-pack/{publicId}', [\App\Http\Controllers\ResourcePackController::class, 'show'])
+        ->where('publicId', '[A-Za-z0-9\-]+');
 
     Route::post('user/register', [\App\Http\Controllers\UserController::class, 'create']);
 
@@ -36,6 +38,12 @@ Route::middleware(DisableCors::class)->group(function () {
         Route::get('user/auth', [\App\Http\Controllers\UserController::class, 'auth']);
         Route::patch('user/nickname', [\App\Http\Controllers\UserController::class, 'changeNickname']);
         Route::get('user/rooms', [\App\Http\Controllers\UserController::class, 'rooms']);
+        Route::prefix('resource-pack')->group(function () {
+            Route::get('', [\App\Http\Controllers\ResourcePackController::class, 'index']);
+            Route::post('', [\App\Http\Controllers\ResourcePackController::class, 'store']);
+            Route::patch('{resourcePack}', [\App\Http\Controllers\ResourcePackController::class, 'update']);
+            Route::delete('{resourcePack}', [\App\Http\Controllers\ResourcePackController::class, 'destroy']);
+        });
 
         Route::prefix('room')->group(function() {
             Route::put('', [\App\Http\Controllers\RoomController::class, 'create']);
