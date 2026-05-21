@@ -692,7 +692,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 })
                                 ->delete();
 
-                            $directViewUuids = array_column($message['data'], 'id');
+                            $directViewUuids = array_values(array_filter(array_map(
+                                fn ($packet) => is_array($packet) && isset($packet['unit']['id'])
+                                    ? (string) $packet['unit']['id']
+                                    : null,
+                                (array) ($message['data'] ?? [])
+                            )));
                             $roomMapTeamUnits = \App\Models\RoomMapItem::query()
                                 ->where('room_map_id', $roomMapTeam->id)
                                 ->where('type', RoomMapItemsService::TYPE_UNIT)
@@ -710,7 +715,17 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             }
                             $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
                             $roomMapMessageDatas = [];
-                            foreach ($message['data'] as $messageData) {
+                            foreach ((array) ($message['data'] ?? []) as $packet) {
+                                if (!is_array($packet) || !isset($packet['unit']) || !is_array($packet['unit'])) {
+                                    continue;
+                                }
+                                $messageData = $packet['unit'];
+                                if (!isset($messageData['id'])) {
+                                    continue;
+                                }
+                                $messageFrames = isset($packet['frames']) && is_array($packet['frames'])
+                                    ? $packet['frames']
+                                    : null;
                                 if ($isPlayerRoomMap && $roomMapTeam->user_id) {
                                     $seenRoomUserIds = array_filter(
                                         (array) ($messageData['seenRoomUserIds'] ?? []),
@@ -732,7 +747,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 }
                                 $roomMapTeamUnits[$messageData['id']]['directView'] = true;
 
-                                $roomMapMessageDatas[] = $messageData;
+                                $packetData = [
+                                    'unit' => $messageData,
+                                ];
+                                if ($messageFrames !== null) {
+                                    $packetData['frames'] = $messageFrames;
+                                }
+                                $roomMapMessageDatas[] = $packetData;
                             }
                             $roomMapMessage = $message;
                             $roomMapMessage['data'] = $roomMapMessageDatas;
