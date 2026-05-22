@@ -183,9 +183,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $roomChat->author = $message['data']['author'];
                     $roomChat->author_team = $currentConnection->team;
                     $roomChat->unitIds = (array) $message['data']['unitIds'];
+                    $roomChat->route_points = (array) ($message['data']['routePoints'] ?? []);
                     $roomChat->status = $message['data']['status'];
                     $roomChat->team = $message['data']['team'];
                     $roomChat->data = $message['data']['text'];
+                    $roomChat->quoted_message_uuid = $message['data']['quotedMessageId'] ?? null;
+                    $roomChat->messenger_id = $message['data']['messengerId'] ?? null;
+                    $roomChat->delivery_status = $message['data']['deliveryStatus'] ?? null;
                     $roomChat->ingame_time = $room->ingame_time;
                     $roomChat->room_id = $currentConnection->room_id;
                     $roomChat->save();
@@ -196,11 +200,84 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $message['data']['time'] = $room->ingame_time->format('Y-m-d H:i:s');
                     $message['data']['created_at'] = $roomChat->created_at?->format('Y-m-d H:i:s');
                     $message['data']['delivered_at'] = null;
+                    $message['data']['quotedMessageId'] = $roomChat->quoted_message_uuid;
+                    $message['data']['messengerId'] = $roomChat->messenger_id;
+                    $message['data']['deliveryStatus'] = $roomChat->delivery_status;
+                    $message['data']['routePoints'] = $roomChat->route_points ?? [];
                     $message['data']['unitFallbackTitles'] = $this->buildChatUnitFallbackTitles(
                         $room->id,
                         (array) ($message['data']['unitIds'] ?? []),
                     );
                     if ($currentConnection->team === TeamEnum::ADMIN) {
+                        $isMessengerReport = $roomChat->author === 'Messenger'
+                            && in_array($roomChat->team, [TeamEnum::RED, TeamEnum::BLUE], true);
+                        if ($isMessengerReport) {
+                            $roomChat->delivered = true;
+                            $roomChat->delivered_at = Carbon::now();
+                            if (!$roomChat->delivery_status) {
+                                $roomChat->delivery_status = 'delivered';
+                            }
+                            $roomChat->save();
+
+                            $roomMapIds = [];
+                            $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
+                            if ($isPlayerRoomMap) {
+                                $adminRoomMapId = (int) RoomMap::query()
+                                    ->where('room_id', $roomChat->room_id)
+                                    ->where('team', TeamEnum::ADMIN)
+                                    ->value('id');
+                                $roomUserIds = [];
+                                if ($adminRoomMapId > 0 && $roomChat->unitIds) {
+                                    $roomUserIds = RoomMapItem::query()
+                                        ->where('room_map_id', $adminRoomMapId)
+                                        ->where('type', RoomMapItemsService::TYPE_UNIT)
+                                        ->whereIn('item_id', $roomChat->unitIds)
+                                        ->get(['data'])
+                                        ->map(fn (RoomMapItem $item) => (int) ($item->data['roomMapUserId'] ?? 0))
+                                        ->filter(fn (int $id) => $id > 0)
+                                        ->unique()
+                                        ->values()
+                                        ->all();
+                                }
+                                if ($roomUserIds) {
+                                    $roomMapIds = RoomMap::query()
+                                        ->where('room_id', $roomChat->room_id)
+                                        ->where('team', $roomChat->team)
+                                        ->whereIn('user_id', $roomUserIds)
+                                        ->pluck('id')
+                                        ->all();
+                                }
+                            }
+                            if (!$roomMapIds) {
+                                $roomMapIds = RoomMap::query()
+                                    ->where('room_id', $roomChat->room_id)
+                                    ->where('team', $roomChat->team)
+                                    ->pluck('id')
+                                    ->all();
+                            }
+                            if ($roomMapIds) {
+                                $roomChat->roomMaps()->syncWithoutDetaching($roomMapIds);
+                            }
+
+                            $message['data']['delivered'] = true;
+                            $message['data']['delivered_at'] = $roomChat->delivered_at?->format('Y-m-d H:i:s');
+                            $message['data']['deliveryStatus'] = $roomChat->delivery_status;
+
+                            if ($isPlayerRoomMap && $roomMapIds) {
+                                $chatRoomMaps = RoomMap::query()
+                                    ->whereIn('id', $roomMapIds)
+                                    ->get(['id', 'team', 'user_id']);
+                                foreach ($chatRoomMaps as $chatRoomMap) {
+                                    if ($chatRoomMap->user_id) {
+                                        $messagesByTeamUser[$chatRoomMap->team->value][$chatRoomMap->user_id][] = $message;
+                                    } else {
+                                        $messagesByTeam[$chatRoomMap->team->value][] = $message;
+                                    }
+                                }
+                            } else {
+                                $messagesByTeam[$roomChat->team->value][] = $message;
+                            }
+                        }
                         $goodMessages[] = $message;
                     } else {
                         if (($room->options['isPlayerRoomMap'] ?? false) && $currentConnection->room_map_user_id) {
@@ -208,14 +285,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         } else {
                             $messagesByTeam[$currentConnection->team->value][] = $message;
                         }
-                        if ($room->stage === 'planning') {
+                        $shouldSyncToUmpire = in_array($room->stage, ['planning', 'war'], true)
+                            && in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED], true);
+                        if ($shouldSyncToUmpire) {
                             $adminRoomMapId = (int) RoomMap::query()
                                 ->where('room_id', $roomChat->room_id)
                                 ->where('team', TeamEnum::ADMIN)
                                 ->value('id');
 
                             $messagesByTeam[TeamEnum::ADMIN->value][] = $message;
-                            $roomChat->roomMaps()->syncWithoutDetaching([$adminRoomMapId]);
+                            if ($adminRoomMapId > 0) {
+                                $roomChat->roomMaps()->syncWithoutDetaching([$adminRoomMapId]);
+                            }
                         }
                     }
                     continue;
@@ -263,6 +344,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
                             'created_at' => $roomChat->created_at?->format('Y-m-d H:i:s'),
                             'delivered_at' => $roomChat->delivered_at?->format('Y-m-d H:i:s'),
+                            'quotedMessageId' => $roomChat->quoted_message_uuid,
+                            'messengerId' => $roomChat->messenger_id,
+                            'deliveryStatus' => $roomChat->delivery_status,
+                            'routePoints' => $roomChat->route_points ?? [],
                             'team' => $roomChat->team,
                             'status' => $roomChat->status,
                             'delivered' => (bool) $roomChat->delivered,
@@ -418,6 +503,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     'created_at' => $chatMessage->created_at?->format('Y-m-d H:i:s'),
                                     'delivered_at' => $chatMessage->delivered_at?->format('Y-m-d H:i:s'),
                                     'delivered' => (bool) $chatMessage->delivered,
+                                    'quotedMessageId' => $chatMessage->quoted_message_uuid,
+                                    'messengerId' => $chatMessage->messenger_id,
+                                    'deliveryStatus' => $chatMessage->delivery_status,
+                                    'routePoints' => $chatMessage->route_points ?? [],
                                     'unitIds' => $chatMessage->unitIds,
                                 ]
                             ];
@@ -485,6 +574,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                         $roomChat->ingame_time = $message['data']['time'];
                         $roomChat->delivered = true;
+                        $roomChat->messenger_id = $message['data']['messengerId'] ?? $roomChat->messenger_id;
+                        $roomChat->quoted_message_uuid = $message['data']['quotedMessageId'] ?? $roomChat->quoted_message_uuid;
+                        $roomChat->delivery_status = $message['data']['deliveryStatus'] ?? 'delivered';
                         $roomChat->delivered_at = Carbon::now();
                         $roomChat->save();
 
@@ -584,6 +676,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
                                 'created_at' => $roomChat->created_at?->format('Y-m-d H:i:s'),
                                 'delivered_at' => $roomChat->delivered_at?->format('Y-m-d H:i:s'),
+                                'quotedMessageId' => $roomChat->quoted_message_uuid,
+                                'messengerId' => $roomChat->messenger_id,
+                                'deliveryStatus' => $roomChat->delivery_status,
+                                'routePoints' => $roomChat->route_points ?? [],
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => true,
@@ -710,9 +806,15 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 ->pluck('data', 'item_id')
                                 ->toArray();
 
+                            $wasDirectViewByUnitId = [];
                             foreach ($roomMapTeamUnits as &$roomMapTeamUnit) {
+                                $unitId = (string) ($roomMapTeamUnit['id'] ?? '');
+                                if ($unitId !== '') {
+                                    $wasDirectViewByUnitId[$unitId] = (bool) ($roomMapTeamUnit['directView'] ?? false);
+                                }
                                 $roomMapTeamUnit['directView'] = false;
                             }
+                            unset($roomMapTeamUnit);
                             $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
                             $roomMapMessageDatas = [];
                             foreach ((array) ($message['data'] ?? []) as $packet) {
@@ -755,14 +857,51 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 }
                                 $roomMapMessageDatas[] = $packetData;
                             }
+
+                            $hiddenUnitUpdates = [];
+                            foreach ($roomMapTeamUnits as $unitId => &$roomMapTeamUnit) {
+                                $wasDirect = (bool) ($wasDirectViewByUnitId[(string) $unitId] ?? false);
+                                $isDirect = (bool) ($roomMapTeamUnit['directView'] ?? false);
+                                if (!$wasDirect || $isDirect) {
+                                    continue;
+                                }
+
+                                $positionChanged = $this->applyLastMoveTargetForHiddenDirectViewUnit($roomMapTeamUnit);
+                                $hadCommands = is_array($roomMapTeamUnit['commands'] ?? null) && count($roomMapTeamUnit['commands']) > 0;
+                                $roomMapTeamUnit['commands'] = [];
+
+                                if (!$positionChanged && !$hadCommands) {
+                                    continue;
+                                }
+
+                                $hiddenUnitUpdates[] = [
+                                    'type' => 'unit',
+                                    'data' => [
+                                        'id' => $roomMapTeamUnit['id'] ?? $unitId,
+                                        'type' => $roomMapTeamUnit['type'] ?? null,
+                                        'team' => $roomMapTeamUnit['team'] ?? null,
+                                        'pos' => $roomMapTeamUnit['pos'] ?? null,
+                                        'angle' => $roomMapTeamUnit['angle'] ?? null,
+                                        'commands' => [],
+                                    ],
+                                ];
+                            }
+                            unset($roomMapTeamUnit);
+
                             $roomMapMessage = $message;
                             $roomMapMessage['data'] = $roomMapMessageDatas;
                             if ($roomMapTeam->user_id) {
                                 $messagesByTeamUser[$message['team']][$roomMapTeam->user_id][] = $roomMapMessage;
+                                foreach ($hiddenUnitUpdates as $unitUpdate) {
+                                    $messagesByTeamUser[$message['team']][$roomMapTeam->user_id][] = $unitUpdate;
+                                }
                             } else {
                                 $messagesByTeam[$message['team']][] = $roomMapMessage;
+                                foreach ($hiddenUnitUpdates as $unitUpdate) {
+                                    $messagesByTeam[$message['team']][] = $unitUpdate;
+                                }
                             }
-                            foreach ($roomMapTeamUnits as &$roomMapTeamUnit) {
+                            foreach ($roomMapTeamUnits as $roomMapTeamUnit) {
                                 RoomMapItem::query()->updateOrCreate(
                                     [
                                         'room_map_id' => $roomMapTeam->id,
@@ -826,6 +965,108 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $this->error("Invalid message type '{$message['type']}' for team '{$currentConnection->team}'");
                         continue;
                     }
+                } else if ($message['type'] === 'direct_view_send_order') {
+                    if ($room->stage !== 'war') {
+                        continue;
+                    }
+                    if (!in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED], true)) {
+                        continue;
+                    }
+                    if (!$currentConnection->room_map_user_id) {
+                        continue;
+                    }
+
+                    $payload = is_array($message['data'] ?? null) ? $message['data'] : [];
+                    $unitId = (string) (
+                        $payload['unitId']
+                        ?? $payload['id']
+                        ?? (is_array($payload['unit'] ?? null) ? ($payload['unit']['id'] ?? '') : '')
+                    );
+                    if ($unitId === '') {
+                        continue;
+                    }
+
+                    $umpireRoomMapId = (int) RoomMap::query()
+                        ->where('room_id', $room->id)
+                        ->where('team', TeamEnum::ADMIN)
+                        ->value('id');
+                    if ($umpireRoomMapId <= 0) {
+                        continue;
+                    }
+
+                    /** @var RoomMapItem|null $umpireUnit */
+                    $umpireUnit = RoomMapItem::query()
+                        ->where('room_map_id', $umpireRoomMapId)
+                        ->where('type', RoomMapItemsService::TYPE_UNIT)
+                        ->where('item_id', $unitId)
+                        ->first();
+                    if (!$umpireUnit || !is_array($umpireUnit->data)) {
+                        continue;
+                    }
+
+                    $unitData = $umpireUnit->data;
+                    $unitOwnerId = (int) ($unitData['roomMapUserId'] ?? 0);
+                    $senderRoomUserId = (int) $currentConnection->room_map_user_id;
+                    if ($unitOwnerId <= 0 || $unitOwnerId !== $senderRoomUserId) {
+                        continue;
+                    }
+                    if ((string) ($unitData['team'] ?? '') !== $currentConnection->team->value) {
+                        continue;
+                    }
+                    if (!($unitData['directView'] ?? false)) {
+                        continue;
+                    }
+                    if (($unitData['isRetreatState'] ?? false)) {
+                        continue;
+                    }
+
+                    $rawCommands = $payload['commands']
+                        ?? (is_array($payload['unit'] ?? null) ? ($payload['unit']['commands'] ?? []) : []);
+                    $rawCommands = is_array($rawCommands) ? $rawCommands : [];
+                    $moveCommands = array_values(array_filter(
+                        $rawCommands,
+                        fn ($command) => is_array($command)
+                            && (($command['type'] ?? null) === 'move')
+                            && is_array($command['state'] ?? null)
+                    ));
+
+                    $existingCommands = is_array($unitData['commands'] ?? null) ? $unitData['commands'] : [];
+                    $nonMoveCommands = array_values(array_filter(
+                        $existingCommands,
+                        fn ($command) => !is_array($command) || (($command['type'] ?? null) !== 'move')
+                    ));
+                    $normalizedMoveCommands = array_map(function ($command) {
+                        $status = (string) ($command['status'] ?? 'pending');
+                        if (!in_array($status, ['pending', 'running'], true)) {
+                            $status = 'pending';
+                        }
+                        return [
+                            'type' => 'move',
+                            'status' => $status,
+                            'state' => $command['state'],
+                        ];
+                    }, $moveCommands);
+
+                    $unitData['commands'] = array_values(array_merge($nonMoveCommands, $normalizedMoveCommands));
+                    $unitData['manualEnvironment'] = null;
+                    $umpireUnit->data = $unitData;
+                    $umpireUnit->save();
+
+                    $directViewOrderPacket = [
+                        'type' => 'direct_view_send_order',
+                        'data' => [
+                            'unitId' => (string) ($unitData['id'] ?? $unitId),
+                            'commands' => $unitData['commands'] ?? [],
+                        ],
+                    ];
+                    $messagesByTeam[TeamEnum::ADMIN->value][] = $directViewOrderPacket;
+                    if (($room->options['isPlayerRoomMap'] ?? false) && $currentConnection->room_map_user_id) {
+                        $messagesByTeamUser[$currentConnection->team->value][$currentConnection->room_map_user_id][] = $directViewOrderPacket;
+                    } else {
+                        $messagesByTeam[$currentConnection->team->value][] = $directViewOrderPacket;
+                    }
+
+                    continue;
                 } else if (in_array($message['type'], ['chat_read'])) {
                     // Ignore messages (No relay)
                     continue;
@@ -844,7 +1085,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         if ($selfMessages) {
             $server->push($currentConnection->id,  json_encode([
                 'type' => 'messages',
-                'messages' => $selfMessages,
+                'messages' => $this->sanitizeChatMessagesForTeam($selfMessages, $currentConnection->team),
             ]));
         }
 
@@ -863,8 +1104,17 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             } else {
                 $connectionIds = GetOtherListenersAction::run($currentConnection);
             }
-            foreach ($connectionIds as $connectionId) {
-                $server->push($connectionId,  json_encode($data));
+            $connections = Connection::query()
+                ->whereIn('id', collect($connectionIds)->all())
+                ->get(['id', 'team']);
+            foreach ($connections as $connection) {
+                $server->push((int) $connection->id,  json_encode([
+                    'type' => 'messages',
+                    'messages' => $this->sanitizeChatMessagesForTeam(
+                        $data['messages'],
+                        $connection->team
+                    ),
+                ]));
             }
         }
 
@@ -879,8 +1129,17 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 TeamEnum::BLUE,
                 TeamEnum::RED,
             ]);
-            foreach ($connectionIds as $connectionId) {
-                $server->push($connectionId,  json_encode($data));
+            $connections = Connection::query()
+                ->whereIn('id', collect($connectionIds)->all())
+                ->get(['id', 'team']);
+            foreach ($connections as $connection) {
+                $server->push((int) $connection->id,  json_encode([
+                    'type' => 'messages',
+                    'messages' => $this->sanitizeChatMessagesForTeam(
+                        $data['messages'],
+                        $connection->team
+                    ),
+                ]));
             }
         }
 
@@ -891,7 +1150,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             foreach ($connectionIds as $connectionId) {
                 $server->push($connectionId, json_encode([
                     'type' => 'messages',
-                    'messages' => $messages,
+                    'messages' => $this->sanitizeChatMessagesForTeam($messages, $team),
                 ]));
             }
         }
@@ -908,11 +1167,34 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 foreach ($connectionIds as $connectionId) {
                     $server->push($connectionId, json_encode([
                         'type' => 'messages',
-                        'messages' => $messages,
+                        'messages' => $this->sanitizeChatMessagesForTeam($messages, $team),
                     ]));
                 }
             }
         }
+    }
+
+    private function sanitizeChatMessagesForTeam(array $messages, TeamEnum|string|null $team): array
+    {
+        $teamValue = $team instanceof TeamEnum ? $team->value : (string) $team;
+        if (!in_array($teamValue, [TeamEnum::BLUE->value, TeamEnum::RED->value], true)) {
+            return $messages;
+        }
+
+        foreach ($messages as &$message) {
+            if (($message['type'] ?? null) !== 'chat') {
+                continue;
+            }
+
+            if (!isset($message['data']) || !is_array($message['data'])) {
+                continue;
+            }
+
+            unset($message['data']['deliveryStatus'], $message['data']['routePoints']);
+        }
+        unset($message);
+
+        return $messages;
     }
 
     private function buildChatUnitFallbackTitles(int $roomId, array $unitIds): array
@@ -1012,6 +1294,51 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 ]
             );
         }
+    }
+
+    private function applyLastMoveTargetForHiddenDirectViewUnit(array &$unitData): bool
+    {
+        $commands = $unitData['commands'] ?? null;
+        if (!is_array($commands)) {
+            return false;
+        }
+
+        for ($i = count($commands) - 1; $i >= 0; $i--) {
+            $command = $commands[$i] ?? null;
+            if (!is_array($command) || ($command['type'] ?? null) !== 'move') {
+                continue;
+            }
+
+            $state = $command['state'] ?? null;
+            if (!is_array($state)) {
+                continue;
+            }
+
+            $target = $state['target'] ?? null;
+            if (!is_array($target) || !array_key_exists('x', $target) || !array_key_exists('y', $target)) {
+                continue;
+            }
+
+            $x = (float) $target['x'];
+            $y = (float) $target['y'];
+            $prevPos = $unitData['pos'] ?? null;
+            if (is_array($prevPos)) {
+                $prevX = (float) ($prevPos['x'] ?? $x);
+                $prevY = (float) ($prevPos['y'] ?? $y);
+                if (abs($prevX - $x) < 0.0001 && abs($prevY - $y) < 0.0001) {
+                    return false;
+                }
+            }
+
+            $unitData['pos'] = [
+                'x' => $x,
+                'y' => $y,
+            ];
+
+            return true;
+        }
+
+        return false;
     }
 
 }

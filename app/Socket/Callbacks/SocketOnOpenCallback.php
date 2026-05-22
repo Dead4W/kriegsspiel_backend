@@ -197,6 +197,11 @@ class SocketOnOpenCallback extends AbstractSocketCallback
         if ($team === \App\Enums\TeamEnum::SPECTATOR) {
             $team = \App\Enums\TeamEnum::ADMIN;
         }
+        $hideMessengerMetaForPlayer = in_array(
+            $currentConnection->team,
+            [TeamEnum::BLUE, TeamEnum::RED],
+            true
+        );
 
         $adminRoomMap = \App\Models\RoomMap::query()
             ->where('room_id', $roomId)
@@ -354,6 +359,17 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                             ->orWhere('delivered', '1');
                     })
             )
+            ->when(
+                $team === \App\Enums\TeamEnum::ADMIN,
+                fn ($query) => $query
+                    ->where(function ($chatVisibilityQuery) {
+                        $chatVisibilityQuery
+                            ->where('author_team', \App\Enums\TeamEnum::ADMIN)
+                            ->orWhere('team', \App\Enums\TeamEnum::ADMIN)
+                            ->orWhere('delivered', '1')
+                            ->orWhereNotNull('delivery_status');
+                    })
+            )
             ->where('room_id', $roomId)
             ->orderByRaw('COALESCE(delivered_at, created_at) asc')
             ->orderBy('id', 'asc')
@@ -407,27 +423,36 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     $authorAvatar = $authorAvatar ?: ($identity['author_avatar'] ?? null);
                 }
             }
+            $chatData = [
+                'id' => $chatMessage->uuid,
+                'author' => $chatMessage->author,
+                'author_id' => $authorId,
+                'author_team' => $chatMessage->author_team,
+                'author_avatar' => $authorAvatar,
+                'status' => $chatMessage->status,
+                'team' => $chatMessage->team,
+                'text' => $chatMessage->data,
+                'time' => $chatMessage->ingame_time->format('Y-m-d H:i:s'),
+                'created_at' => $chatMessage->created_at?->format('Y-m-d H:i:s'),
+                'delivered_at' => $chatMessage->delivered_at?->format('Y-m-d H:i:s'),
+                'delivered' => (bool) $chatMessage->delivered,
+                'quotedMessageId' => $chatMessage->quoted_message_uuid,
+                'messengerId' => $chatMessage->messenger_id,
+                'deliveryStatus' => $chatMessage->delivery_status,
+                'routePoints' => $chatMessage->route_points ?? [],
+                'unitIds' => $chatMessage->unitIds,
+                'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
+                    (int) $adminRoomMap->id,
+                    (array) $chatMessage->unitIds,
+                ),
+            ];
+            if ($hideMessengerMetaForPlayer) {
+                unset($chatData['deliveryStatus'], $chatData['routePoints']);
+            }
+
             yield [
                 'type' => 'chat',
-                'data' => [
-                    'id' => $chatMessage->uuid,
-                    'author' => $chatMessage->author,
-                    'author_id' => $authorId,
-                    'author_team' => $chatMessage->author_team,
-                    'author_avatar' => $authorAvatar,
-                    'status' => $chatMessage->status,
-                    'team' => $chatMessage->team,
-                    'text' => $chatMessage->data,
-                    'time' => $chatMessage->ingame_time->format('Y-m-d H:i:s'),
-                    'created_at' => $chatMessage->created_at?->format('Y-m-d H:i:s'),
-                    'delivered_at' => $chatMessage->delivered_at?->format('Y-m-d H:i:s'),
-                    'delivered' => (bool) $chatMessage->delivered,
-                    'unitIds' => $chatMessage->unitIds,
-                    'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
-                        (int) $adminRoomMap->id,
-                        (array) $chatMessage->unitIds,
-                    ),
-                ],
+                'data' => $chatData,
                 'meta' => [
                     'ignore' => true,
                 ]

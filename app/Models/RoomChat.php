@@ -15,6 +15,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string $author
  * @property TeamEnum $author_team
  * @property array $unitIds
+ * @property string|null $quoted_message_uuid
+ * @property string|null $messenger_id
+ * @property string|null $delivery_status
+ * @property array|null $route_points
  * @property string $status
  * @property bool $delivered
  * @property \Illuminate\Support\Carbon|null $delivered_at
@@ -44,6 +48,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property-read int|null $room_maps_count
  * @property-read \App\Models\User|null $user
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereDeliveredAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereDeliveryStatus($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereMessengerId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereQuotedMessageUuid($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereRoutePoints($value)
  * @mixin \Eloquent
  */
 class RoomChat extends Model
@@ -54,12 +62,17 @@ class RoomChat extends Model
         'team',
         'author',
         'data',
+        'quoted_message_uuid',
+        'messenger_id',
+        'delivery_status',
+        'route_points',
     ];
 
     protected $casts = [
         'author_team' => TeamEnum::class,
         'team' => TeamEnum::class,
         'unitIds' => 'array',
+        'route_points' => 'array',
         'ingame_time' => 'datetime',
         'delivered_at' => 'datetime',
     ];
