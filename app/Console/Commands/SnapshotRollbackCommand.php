@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\RoomMap;
 use App\Models\RoomMapItem;
+use App\Models\Room;
 use App\Models\Snapshot;
 use App\Services\RoomMapItemsService;
 use Carbon\Carbon;
@@ -78,7 +79,7 @@ class SnapshotRollbackCommand extends Command
                 RoomMapItem::query()->insert($chunk);
             }
 
-            $room = $roomMap->room;
+            $room = Room::query()->find($roomMap->room_id);
             if ($room) {
                 $room->ingame_time = $snapshot->ingame_time;
                 $room->save();
