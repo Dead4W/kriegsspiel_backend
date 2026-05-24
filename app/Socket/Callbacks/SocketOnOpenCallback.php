@@ -10,6 +10,7 @@ use App\Models\RoomUser;
 use App\Models\Session;
 use App\Models\UserToken;
 use App\Services\RoomMapItemsService;
+use App\Services\RoomOptionsService;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
@@ -212,13 +213,19 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             ->where('id', $roomId)
             ->firstOrFail();
         $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
+        /** @var RoomOptionsService $roomOptionsService */
+        $roomOptionsService = app(RoomOptionsService::class);
+        $sanitizedRoomOptions = $roomOptionsService->sanitizeOptionsForTeam(
+            (array) $room->options,
+            $currentConnection->team
+        );
 
         yield [
             'type' => 'room',
             'data' => [
                 'uuid' => $room->uuid,
                 'stage' => $room->stage,
-                'options' => $room->options,
+                'options' => $sanitizedRoomOptions,
                 'name' => $room->name,
                 'weather' => $room->weather,
                 'ingame_time' => $room->ingame_time->format('Y-m-d H:i:s'),

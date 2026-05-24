@@ -9,6 +9,8 @@ use App\Models\RoomMapItem;
 use App\Models\RoomUser;
 use App\Services\RoomMapItemsService;
 use App\Services\MetricsService;
+use App\Services\RoomOptionsService;
+use App\Services\RoomUnitLimitsService;
 use App\Socket\Actions\GetOtherListenersAction;
 use App\Socket\Actions\SocketErrorAction;
 use Carbon\Carbon;
@@ -81,6 +83,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             TeamEnum::RED->value => [],
             TeamEnum::BLUE->value => [],
         ];
+        $unitLimitsUsageChanged = false;
+        $selfUnitRemovals = [];
 
         $room = \App\Models\Room::query()
             ->where('id', $currentConnection->room_id)
@@ -95,6 +99,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             &$selfMessages,
             &$messagesByTeam,
             &$messagesByTeamUser,
+            &$unitLimitsUsageChanged,
+            &$selfUnitRemovals,
         ) {
             if ($currentConnection->team === TeamEnum::SPECTATOR || $room->stage === 'end') {
                 foreach ($decodedFrameData['messages'] as $message) {
@@ -114,6 +120,54 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             foreach ($decodedFrameData['messages'] as $message) {
                 if ($message['type'] === 'unit') {
                     $itemData = $message['data'];
+                    if (!is_array($itemData)) {
+                        continue;
+                    }
+                    $existingUnit = RoomMapItem::query()
+                        ->where('room_map_id', $roomMap->id)
+                        ->where('type', RoomMapItemsService::TYPE_UNIT)
+                        ->where('item_id', $itemData['id'])
+                        ->first();
+                    $isNewUnit = $existingUnit === null;
+
+                    if ($room->stage === 'planning') {
+                        $existingUnitTeam = is_array($existingUnit?->data)
+                            ? ($existingUnit->data['team'] ?? null)
+                            : null;
+                        $unitTeam = $isNewUnit
+                            ? (string) ($itemData['team'] ?? '')
+                            : (string) ($existingUnitTeam ?: ($itemData['team'] ?? ''));
+                        if (in_array($unitTeam, [TeamEnum::RED->value, TeamEnum::BLUE->value], true)) {
+                            /** @var RoomOptionsService $roomOptionsService */
+                            $roomOptionsService = app(RoomOptionsService::class);
+                            $isAllowedPosition = $roomOptionsService->isPlanningSpawnPointAllowed(
+                                $room,
+                                $unitTeam,
+                                $itemData['pos'] ?? null
+                            );
+                            if (!$isAllowedPosition) {
+                                if ($isNewUnit) {
+                                    $selfUnitRemovals[] = (string) ($itemData['id'] ?? '');
+                                } elseif ($existingUnit && is_array($existingUnit->data)) {
+                                    $selfMessages[] = [
+                                        'type' => 'unit',
+                                        'data' => $existingUnit->data,
+                                    ];
+                                }
+                                continue;
+                            }
+                        }
+                    }
+
+                    if ($isNewUnit) {
+                        /** @var RoomUnitLimitsService $roomUnitLimitsService */
+                        $roomUnitLimitsService = app(RoomUnitLimitsService::class);
+                        if (!$roomUnitLimitsService->canSpawnUnit($room, $itemData)) {
+                            $selfUnitRemovals[] = (string) ($itemData['id'] ?? '');
+                            continue;
+                        }
+                    }
+
                     RoomMapItem::query()->updateOrCreate(
                         [
                             'room_map_id' => $roomMap->id,
@@ -124,6 +178,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             'data' => $itemData,
                         ]
                     );
+                    if ($isNewUnit) {
+                        $unitLimitsUsageChanged = true;
+                    }
                 } elseif ($message['type'] === 'unit-remove') {
                     if (!empty($message['data'])) {
                         \App\Models\RoomMapItem::query()
@@ -131,6 +188,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             ->where('type', RoomMapItemsService::TYPE_UNIT)
                             ->whereIn('item_id', $message['data'])
                             ->delete();
+                        $unitLimitsUsageChanged = true;
                     }
                 } elseif ($message['type'] === 'paint_add') {
                     $isSharedForPlayers = $currentConnection->team === TeamEnum::ADMIN
@@ -526,6 +584,52 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             ->update([
                                 'status' => 'read',
                             ]);
+                    } else if ($message['type'] === 'room_options_update') {
+                        if ($room->stage !== 'planning') {
+                            continue;
+                        }
+                        $patch = is_array($message['data'] ?? null) ? $message['data'] : [];
+                        /** @var RoomOptionsService $roomOptionsService */
+                        $roomOptionsService = app(RoomOptionsService::class);
+                        $normalizedPatch = $roomOptionsService->normalizeAdminPatch($patch);
+                        if (!$normalizedPatch) {
+                            continue;
+                        }
+                        $room->options = array_merge((array) $room->options, $normalizedPatch);
+                        $message['data'] = $normalizedPatch;
+                        $allMessages[] = $message;
+                        $unitLimitsUsageChanged = true;
+                        continue;
+                    } else if ($message['type'] === 'room_per_team_settings_update') {
+                        if ($room->stage !== 'planning') {
+                            continue;
+                        }
+
+                        $patch = is_array($message['data'] ?? null) ? $message['data'] : [];
+                        /** @var RoomOptionsService $roomOptionsService */
+                        $roomOptionsService = app(RoomOptionsService::class);
+                        $normalizedPatch = $roomOptionsService->normalizePerTeamSettingsPatch($patch);
+                        if (!$normalizedPatch) {
+                            continue;
+                        }
+
+                        $currentPerTeamSettings = is_array($room->options['perTeamSettings'] ?? null)
+                            ? $room->options['perTeamSettings']
+                            : [];
+
+                        foreach ($normalizedPatch as $team => $teamSettings) {
+                            $currentTeamSettings = is_array($currentPerTeamSettings[$team] ?? null)
+                                ? $currentPerTeamSettings[$team]
+                                : [];
+                            $currentPerTeamSettings[$team] = array_merge($currentTeamSettings, $teamSettings);
+                        }
+
+                        $roomOptions = (array) $room->options;
+                        $roomOptions['perTeamSettings'] = $currentPerTeamSettings;
+                        $room->options = $roomOptions;
+                        $message['data'] = $normalizedPatch;
+                        $allMessages[] = $message;
+                        continue;
                     } else if ($message['type'] === 'set_stage') {
                         if ($room->stage !== $message['data']) {
                             if ($room->stage === 'planning' && $message['data'] === 'war') {
@@ -1152,10 +1256,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             $roomMap->save();
         });
 
+        $selfUnitRemovals = array_values(array_filter(array_unique($selfUnitRemovals)));
+        if ($selfUnitRemovals) {
+            $selfMessages[] = [
+                'type' => 'unit-remove',
+                'data' => $selfUnitRemovals,
+            ];
+        }
+
         if ($selfMessages) {
             $server->push($currentConnection->id,  json_encode([
                 'type' => 'messages',
-                'messages' => $this->sanitizeChatMessagesForTeam($selfMessages, $currentConnection->team),
+                'messages' => $this->sanitizeMessagesForTeam($selfMessages, $currentConnection->team),
             ]));
         }
 
@@ -1180,7 +1292,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             foreach ($connections as $connection) {
                 $server->push((int) $connection->id,  json_encode([
                     'type' => 'messages',
-                    'messages' => $this->sanitizeChatMessagesForTeam(
+                    'messages' => $this->sanitizeMessagesForTeam(
                         $data['messages'],
                         $connection->team
                     ),
@@ -1205,7 +1317,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             foreach ($connections as $connection) {
                 $server->push((int) $connection->id,  json_encode([
                     'type' => 'messages',
-                    'messages' => $this->sanitizeChatMessagesForTeam(
+                    'messages' => $this->sanitizeMessagesForTeam(
                         $data['messages'],
                         $connection->team
                     ),
@@ -1220,7 +1332,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             foreach ($connectionIds as $connectionId) {
                 $server->push($connectionId, json_encode([
                     'type' => 'messages',
-                    'messages' => $this->sanitizeChatMessagesForTeam($messages, $team),
+                    'messages' => $this->sanitizeMessagesForTeam($messages, $team),
                 ]));
             }
         }
@@ -1237,30 +1349,84 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 foreach ($connectionIds as $connectionId) {
                     $server->push($connectionId, json_encode([
                         'type' => 'messages',
-                        'messages' => $this->sanitizeChatMessagesForTeam($messages, $team),
+                        'messages' => $this->sanitizeMessagesForTeam($messages, $team),
                     ]));
                 }
             }
         }
+
+        if ($unitLimitsUsageChanged) {
+            /** @var RoomUnitLimitsService $roomUnitLimitsService */
+            $roomUnitLimitsService = app(RoomUnitLimitsService::class);
+            $usagePayload = $roomUnitLimitsService->buildUsagePayload($room);
+
+            $roomConnections = Connection::query()
+                ->where('room_id', $currentConnection->room_id)
+                ->pluck('id');
+
+            foreach ($roomConnections as $connectionId) {
+                $server->push((int) $connectionId, json_encode([
+                    'type' => 'messages',
+                    'messages' => [
+                        [
+                            'type' => 'unit_limits_usage',
+                            'data' => $usagePayload,
+                        ],
+                    ],
+                ]));
+            }
+        }
     }
 
-    private function sanitizeChatMessagesForTeam(array $messages, TeamEnum|string|null $team): array
+    private function sanitizeMessagesForTeam(array $messages, TeamEnum|string|null $team): array
     {
         $teamValue = $team instanceof TeamEnum ? $team->value : (string) $team;
-        if (!in_array($teamValue, [TeamEnum::BLUE->value, TeamEnum::RED->value], true)) {
-            return $messages;
-        }
+        /** @var RoomOptionsService $roomOptionsService */
+        $roomOptionsService = app(RoomOptionsService::class);
 
         foreach ($messages as &$message) {
-            if (($message['type'] ?? null) !== 'chat') {
+            $type = $message['type'] ?? null;
+
+            if ($type === 'chat') {
+                if (!in_array($teamValue, [TeamEnum::BLUE->value, TeamEnum::RED->value], true)) {
+                    continue;
+                }
+                if (!isset($message['data']) || !is_array($message['data'])) {
+                    continue;
+                }
+                unset($message['data']['deliveryStatus'], $message['data']['routePoints']);
                 continue;
             }
 
+            if (!in_array($type, ['room', 'room_options_update', 'room_per_team_settings_update'], true)) {
+                continue;
+            }
             if (!isset($message['data']) || !is_array($message['data'])) {
                 continue;
             }
 
-            unset($message['data']['deliveryStatus'], $message['data']['routePoints']);
+            if ($type === 'room' && isset($message['data']['options']) && is_array($message['data']['options'])) {
+                $message['data']['options'] = $roomOptionsService->sanitizeOptionsForTeam(
+                    $message['data']['options'],
+                    $teamValue
+                );
+                continue;
+            }
+
+            if ($type === 'room_options_update') {
+                $message['data'] = $roomOptionsService->sanitizeOptionsForTeam(
+                    $message['data'],
+                    $teamValue
+                );
+                continue;
+            }
+
+            if ($type === 'room_per_team_settings_update') {
+                $message['data'] = $roomOptionsService->sanitizePerTeamSettingsPatchForTeam(
+                    $message['data'],
+                    $teamValue
+                );
+            }
         }
         unset($message);
 
