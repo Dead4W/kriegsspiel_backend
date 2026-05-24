@@ -559,6 +559,76 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             $allMessages[] = $message;
                             continue;
                         }
+                    } else if ($message['type'] === 'messenger_delivery_update') {
+                        $roomChat = \App\Models\RoomChat::query()
+                            ->where('room_id', $room->id)
+                            ->where('uuid', $message['data']['id'])
+                            ->first();
+
+                        if (!$roomChat) {
+                            $this->error("RoomChat not found '{$message['data']['id']}'");
+                            continue;
+                        }
+
+                        $roomChat->messenger_id = $message['data']['messengerId'] ?? $roomChat->messenger_id;
+                        $roomChat->quoted_message_uuid = $message['data']['quotedMessageId'] ?? $roomChat->quoted_message_uuid;
+                        $roomChat->delivery_status = $message['data']['deliveryStatus'] ?? $roomChat->delivery_status;
+                        $roomChat->save();
+
+                        $authorId = $roomChat->user_id ? (int) $roomChat->user_id : null;
+                        if (!$authorId) {
+                            $authorId = RoomUser::query()
+                                ->where('room_id', $roomChat->room_id)
+                                ->where('team', $roomChat->author_team)
+                                ->whereHas('user', function ($query) use ($roomChat) {
+                                    $query->where('name', $roomChat->author);
+                                })
+                                ->value('user_id');
+                            if ($authorId) {
+                                $roomChat->user_id = $authorId;
+                                $roomChat->save();
+                            }
+                        }
+
+                        $chatMessage = [
+                            'type' => 'chat',
+                            'data' => [
+                                'id' => $roomChat->uuid,
+                                'author' => $roomChat->author,
+                                'author_id' => $authorId,
+                                'author_team' => $roomChat->author_team,
+                                'author_avatar' => $authorId
+                                    ? \App\Models\User::query()->where('id', $authorId)->value('avatar')
+                                    : null,
+                                'unitIds' => $roomChat->unitIds,
+                                'text' => $roomChat->data,
+                                'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
+                                'created_at' => $roomChat->created_at?->format('Y-m-d H:i:s'),
+                                'delivered_at' => $roomChat->delivered_at?->format('Y-m-d H:i:s'),
+                                'quotedMessageId' => $roomChat->quoted_message_uuid,
+                                'messengerId' => $roomChat->messenger_id,
+                                'deliveryStatus' => $roomChat->delivery_status,
+                                'routePoints' => $roomChat->route_points ?? [],
+                                'team' => $roomChat->team,
+                                'status' => $roomChat->status,
+                                'delivered' => (bool) $roomChat->delivered,
+                                'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
+                                    $room->id,
+                                    (array) $roomChat->unitIds,
+                                ),
+                            ],
+                        ];
+
+                        $chatRoomMaps = $roomChat->roomMaps()->get(['room_maps.id', 'team', 'user_id']);
+                        foreach ($chatRoomMaps as $chatRoomMap) {
+                            if ($chatRoomMap->user_id) {
+                                $messagesByTeamUser[$chatRoomMap->team->value][$chatRoomMap->user_id][] = $chatMessage;
+                            } else {
+                                $messagesByTeam[$chatRoomMap->team->value][] = $chatMessage;
+                            }
+                        }
+
+                        continue;
                     } else if ($message['type'] === 'messenger_delivery') {
                         $roomChat = \App\Models\RoomChat::query()
                             ->where('room_id', $room->id)
