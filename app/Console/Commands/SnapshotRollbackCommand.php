@@ -118,7 +118,8 @@ class SnapshotRollbackCommand extends Command
                 'room_map_id' => $roomMapId,
                 'type' => $type,
                 'item_id' => $itemId,
-                'data' => $itemData,
+                // Query Builder insert() does not apply Eloquent casts.
+                'data' => json_encode($itemData, JSON_UNESCAPED_UNICODE),
                 'shared' => $type === RoomMapItemsService::TYPE_PAINT
                     ? (bool) ($paintSharedByItemId[$itemId] ?? false)
                     : false,
