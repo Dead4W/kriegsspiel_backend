@@ -129,6 +129,23 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         ->where('item_id', $itemData['id'])
                         ->first();
                     $isNewUnit = $existingUnit === null;
+                    /** @var RoomOptionsService $roomOptionsService */
+                    $roomOptionsService = app(RoomOptionsService::class);
+                    $isInActiveZone = $roomOptionsService->isPointInsideActiveZone(
+                        $room,
+                        $itemData['pos'] ?? null
+                    );
+                    if (!$isInActiveZone) {
+                        if ($isNewUnit) {
+                            $selfUnitRemovals[] = (string) ($itemData['id'] ?? '');
+                        } elseif ($existingUnit && is_array($existingUnit->data)) {
+                            $selfMessages[] = [
+                                'type' => 'unit',
+                                'data' => $existingUnit->data,
+                            ];
+                        }
+                        continue;
+                    }
 
                     if ($room->stage === 'planning') {
                         $existingUnitTeam = is_array($existingUnit?->data)
@@ -138,8 +155,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             ? (string) ($itemData['team'] ?? '')
                             : (string) ($existingUnitTeam ?: ($itemData['team'] ?? ''));
                         if (in_array($unitTeam, [TeamEnum::RED->value, TeamEnum::BLUE->value], true)) {
-                            /** @var RoomOptionsService $roomOptionsService */
-                            $roomOptionsService = app(RoomOptionsService::class);
                             $isAllowedPosition = $roomOptionsService->isPlanningSpawnPointAllowed(
                                 $room,
                                 $unitTeam,
@@ -248,6 +263,9 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $roomChat->quoted_message_uuid = $message['data']['quotedMessageId'] ?? null;
                     $roomChat->messenger_id = $message['data']['messengerId'] ?? null;
                     $roomChat->delivery_status = $message['data']['deliveryStatus'] ?? null;
+                    $roomChat->orders = is_array($message['data']['orders'] ?? null)
+                        ? $message['data']['orders']
+                        : null;
                     $roomChat->ingame_time = $room->ingame_time;
                     $roomChat->room_id = $currentConnection->room_id;
                     $roomChat->save();
@@ -262,6 +280,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $message['data']['messengerId'] = $roomChat->messenger_id;
                     $message['data']['deliveryStatus'] = $roomChat->delivery_status;
                     $message['data']['routePoints'] = $roomChat->route_points ?? [];
+                    $message['data']['orders'] = $roomChat->orders;
                     $message['data']['unitFallbackTitles'] = $this->buildChatUnitFallbackTitles(
                         $room->id,
                         (array) ($message['data']['unitIds'] ?? []),
@@ -406,6 +425,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             'messengerId' => $roomChat->messenger_id,
                             'deliveryStatus' => $roomChat->delivery_status,
                             'routePoints' => $roomChat->route_points ?? [],
+                            'orders' => $roomChat->orders,
                             'team' => $roomChat->team,
                             'status' => $roomChat->status,
                             'delivered' => (bool) $roomChat->delivered,
@@ -425,6 +445,64 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         }
                     }
 
+                    continue;
+                } elseif ($message['type'] === 'chat_orders_update') {
+                    if ($currentConnection->team !== TeamEnum::ADMIN) {
+                        continue;
+                    }
+                    $messageId = (string) ($message['data']['id'] ?? '');
+                    if ($messageId === '') {
+                        continue;
+                    }
+                    $roomChat = \App\Models\RoomChat::query()
+                        ->where('room_id', $room->id)
+                        ->where('uuid', $messageId)
+                        ->first();
+                    if (!$roomChat) {
+                        continue;
+                    }
+                    $roomChat->orders = is_array($message['data']['orders'] ?? null)
+                        ? $message['data']['orders']
+                        : null;
+                    $roomChat->save();
+
+                    $chatMessage = [
+                        'type' => 'chat',
+                        'data' => [
+                            'id' => $roomChat->uuid,
+                            'author' => $roomChat->author,
+                            'author_id' => $roomChat->user_id,
+                            'author_team' => $roomChat->author_team,
+                            'author_avatar' => $currentConnection->user?->avatar,
+                            'unitIds' => $roomChat->unitIds,
+                            'text' => $roomChat->data,
+                            'time' => $roomChat->ingame_time->format('Y-m-d H:i:s'),
+                            'created_at' => $roomChat->created_at?->format('Y-m-d H:i:s'),
+                            'delivered_at' => $roomChat->delivered_at?->format('Y-m-d H:i:s'),
+                            'quotedMessageId' => $roomChat->quoted_message_uuid,
+                            'messengerId' => $roomChat->messenger_id,
+                            'deliveryStatus' => $roomChat->delivery_status,
+                            'routePoints' => $roomChat->route_points ?? [],
+                            'orders' => $roomChat->orders,
+                            'team' => $roomChat->team,
+                            'status' => $roomChat->status,
+                            'delivered' => (bool) $roomChat->delivered,
+                            'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
+                                $room->id,
+                                (array) $roomChat->unitIds,
+                            ),
+                        ],
+                    ];
+
+                    $chatRoomMaps = $roomChat->roomMaps()->get(['room_maps.id', 'team', 'user_id']);
+                    foreach ($chatRoomMaps as $chatRoomMap) {
+                        if ($chatRoomMap->user_id) {
+                            $messagesByTeamUser[$chatRoomMap->team->value][$chatRoomMap->user_id][] = $chatMessage;
+                        } else {
+                            $messagesByTeam[$chatRoomMap->team->value][] = $chatMessage;
+                        }
+                    }
+                    $goodMessages[] = $chatMessage;
                     continue;
                 } elseif ($message['type'] === 'cursor') {
                     $message['data']['team'] = $currentConnection->team->value;
@@ -565,6 +643,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     'messengerId' => $chatMessage->messenger_id,
                                     'deliveryStatus' => $chatMessage->delivery_status,
                                     'routePoints' => $chatMessage->route_points ?? [],
+                                    'orders' => $chatMessage->orders,
                                     'unitIds' => $chatMessage->unitIds,
                                 ]
                             ];
@@ -599,6 +678,24 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $message['data'] = $normalizedPatch;
                         $allMessages[] = $message;
                         $unitLimitsUsageChanged = true;
+                        continue;
+                    } else if ($message['type'] === 'room_params_update') {
+                        $patch = is_array($message['data'] ?? null) ? $message['data'] : [];
+                        /** @var RoomOptionsService $roomOptionsService */
+                        $roomOptionsService = app(RoomOptionsService::class);
+                        $normalizedPatch = $roomOptionsService->normalizeRoomParamsPatch($patch);
+                        if (!$normalizedPatch) {
+                            continue;
+                        }
+
+                        $roomOptions = (array) $room->options;
+                        $currentParams = is_array($roomOptions['params'] ?? null)
+                            ? $roomOptions['params']
+                            : [];
+                        $roomOptions['params'] = array_merge($currentParams, $normalizedPatch);
+                        $room->options = $roomOptions;
+                        $message['data'] = $normalizedPatch;
+                        $allMessages[] = $message;
                         continue;
                     } else if ($message['type'] === 'room_per_team_settings_update') {
                         if ($room->stage !== 'planning') {
@@ -713,6 +810,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'messengerId' => $roomChat->messenger_id,
                                 'deliveryStatus' => $roomChat->delivery_status,
                                 'routePoints' => $roomChat->route_points ?? [],
+                                'orders' => $roomChat->orders,
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => (bool) $roomChat->delivered,
@@ -854,6 +952,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'messengerId' => $roomChat->messenger_id,
                                 'deliveryStatus' => $roomChat->delivery_status,
                                 'routePoints' => $roomChat->route_points ?? [],
+                                'orders' => $roomChat->orders,
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => true,

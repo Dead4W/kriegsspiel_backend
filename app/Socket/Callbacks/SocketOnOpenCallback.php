@@ -226,6 +226,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 'uuid' => $room->uuid,
                 'stage' => $room->stage,
                 'options' => $sanitizedRoomOptions,
+                'params' => $roomOptionsService->getRoomParams($room),
                 'name' => $room->name,
                 'weather' => $room->weather,
                 'ingame_time' => $room->ingame_time->format('Y-m-d H:i:s'),
@@ -447,6 +448,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 'messengerId' => $chatMessage->messenger_id,
                 'deliveryStatus' => $chatMessage->delivery_status,
                 'routePoints' => $chatMessage->route_points ?? [],
+                'orders' => $chatMessage->orders,
                 'unitIds' => $chatMessage->unitIds,
                 'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
                     (int) $adminRoomMap->id,

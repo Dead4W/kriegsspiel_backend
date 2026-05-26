@@ -10,12 +10,14 @@ use App\Models\RoomUser;
 
 class RoomOptionsService
 {
+    public const KEY_PARAMS = 'params';
     public const KEY_MAX_PLAYERS_PER_TEAM = 'maxPlayersPerTeam';
     public const KEY_LOBBY_SLOTS = 'lobbySlots';
     public const KEY_TEAM_BRIEFING = 'teamBriefing';
     public const KEY_PER_TEAM_SETTINGS = 'perTeamSettings';
     public const KEY_TEAM_UNIT_LIMITS = 'teamUnitLimits';
     public const KEY_TEAM_SPAWN_ZONES = 'teamSpawnZones';
+    public const KEY_ACTIVE_ZONES = 'activeZones';
     public const KEY_RED_TEAM_NAME = 'redTeamName';
     public const KEY_BLUE_TEAM_NAME = 'blueTeamName';
 
@@ -317,6 +319,81 @@ class RoomOptionsService
         }
 
         foreach ($teamRects as $rect) {
+            if (
+                $point['x'] >= $rect['from']['x']
+                && $point['x'] <= $rect['to']['x']
+                && $point['y'] >= $rect['from']['y']
+                && $point['y'] <= $rect['to']['y']
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function normalizeRoomParamsPatch(array $patch): array
+    {
+        $normalized = [];
+        if (array_key_exists(self::KEY_ACTIVE_ZONES, $patch)) {
+            $normalized[self::KEY_ACTIVE_ZONES] = $this->normalizePlanningSpawnRects(
+                $patch[self::KEY_ACTIVE_ZONES]
+            );
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function getRoomParams(Room $room): array
+    {
+        $roomOptions = is_array($room->options) ? $room->options : [];
+        $rawParams = is_array($roomOptions[self::KEY_PARAMS] ?? null)
+            ? $roomOptions[self::KEY_PARAMS]
+            : [];
+
+        $hasActiveZones = array_key_exists(self::KEY_ACTIVE_ZONES, $rawParams)
+            || array_key_exists(self::KEY_ACTIVE_ZONES, $roomOptions);
+        if (!$hasActiveZones) {
+            return [];
+        }
+
+        return [
+            self::KEY_ACTIVE_ZONES => $this->normalizePlanningSpawnRects(
+                $rawParams[self::KEY_ACTIVE_ZONES] ?? ($roomOptions[self::KEY_ACTIVE_ZONES] ?? null)
+            ),
+        ];
+    }
+
+    /**
+     * @return array<int, array{from: array{x: float, y: float}, to: array{x: float, y: float}}>
+     */
+    public function getActiveZoneRects(Room $room): array
+    {
+        $params = $this->getRoomParams($room);
+        return is_array($params[self::KEY_ACTIVE_ZONES] ?? null)
+            ? $params[self::KEY_ACTIVE_ZONES]
+            : [];
+    }
+
+    public function isPointInsideActiveZone(Room $room, mixed $pos): bool
+    {
+        $point = $this->normalizePoint($pos);
+        if ($point === null) {
+            return false;
+        }
+
+        $activeRects = $this->getActiveZoneRects($room);
+        if (!$activeRects) {
+            return true;
+        }
+
+        foreach ($activeRects as $rect) {
             if (
                 $point['x'] >= $rect['from']['x']
                 && $point['x'] <= $rect['to']['x']
