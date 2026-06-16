@@ -1133,6 +1133,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                             $hiddenUnitUpdates = [];
                             foreach ($roomMapTeamUnits as $unitId => &$roomMapTeamUnit) {
+                                if ($roomMapTeamUnit['type'] === 'messenger') continue;
                                 $wasDirect = (bool) ($wasDirectViewByUnitId[(string) $unitId] ?? false);
                                 $isDirect = (bool) ($roomMapTeamUnit['directView'] ?? false);
                                 if (!$wasDirect || $isDirect) {
@@ -1245,9 +1246,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     if (!in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED], true)) {
                         continue;
                     }
-                    if (!$currentConnection->room_map_user_id) {
-                        continue;
-                    }
 
                     $payload = is_array($message['data'] ?? null) ? $message['data'] : [];
                     $unitId = (string) (
@@ -1278,12 +1276,10 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     }
 
                     $unitData = $umpireUnit->data;
-                    $unitOwnerId = (int) ($unitData['roomMapUserId'] ?? 0);
-                    $senderRoomUserId = (int) $currentConnection->room_map_user_id;
-                    if ($unitOwnerId <= 0 || $unitOwnerId !== $senderRoomUserId) {
+                    if ((string) ($unitData['team'] ?? '') !== $currentConnection->team->value) {
                         continue;
                     }
-                    if ((string) ($unitData['team'] ?? '') !== $currentConnection->team->value) {
+                    if ($unitData['type'] === 'messenger') {
                         continue;
                     }
                     if (!($unitData['directView'] ?? false)) {
@@ -1296,31 +1292,83 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $rawCommands = $payload['commands']
                         ?? (is_array($payload['unit'] ?? null) ? ($payload['unit']['commands'] ?? []) : []);
                     $rawCommands = is_array($rawCommands) ? $rawCommands : [];
-                    $moveCommands = array_values(array_filter(
+                    $directViewManagedTypes = ['move', 'attack'];
+                    $directViewCommands = array_values(array_filter(
                         $rawCommands,
                         fn ($command) => is_array($command)
-                            && (($command['type'] ?? null) === 'move')
+                            && in_array(($command['type'] ?? null), $directViewManagedTypes, true)
                             && is_array($command['state'] ?? null)
                     ));
 
                     $existingCommands = is_array($unitData['commands'] ?? null) ? $unitData['commands'] : [];
-                    $nonMoveCommands = array_values(array_filter(
+                    $incomingCommandTypes = array_values(array_unique(array_map(
+                        fn ($command) => (string) ($command['type'] ?? ''),
+                        $directViewCommands
+                    )));
+                    $preservedCommands = array_values(array_filter(
                         $existingCommands,
-                        fn ($command) => !is_array($command) || (($command['type'] ?? null) !== 'move')
+                        function ($command) use ($incomingCommandTypes, $directViewManagedTypes) {
+                            if (!is_array($command)) {
+                                return true;
+                            }
+                            $commandType = (string) ($command['type'] ?? '');
+                            if (!$incomingCommandTypes) {
+                                return !in_array($commandType, $directViewManagedTypes, true);
+                            }
+                            return !in_array($commandType, $incomingCommandTypes, true);
+                        }
                     ));
-                    $normalizedMoveCommands = array_map(function ($command) {
+                    $normalizedDirectViewCommands = array_map(function ($command) {
+                        $type = (string) ($command['type'] ?? '');
                         $status = (string) ($command['status'] ?? 'pending');
                         if (!in_array($status, ['pending', 'running'], true)) {
                             $status = 'pending';
                         }
-                        return [
-                            'type' => 'move',
-                            'status' => $status,
-                            'state' => $command['state'],
-                        ];
-                    }, $moveCommands);
 
-                    $unitData['commands'] = array_values(array_merge($nonMoveCommands, $normalizedMoveCommands));
+                        if ($type === 'move') {
+                            return [
+                                'type' => 'move',
+                                'status' => $status,
+                                'state' => $command['state'],
+                            ];
+                        }
+
+                        $state = is_array($command['state'] ?? null) ? $command['state'] : [];
+                        $targets = array_values(array_filter(
+                            array_map('strval', is_array($state['targets'] ?? null) ? $state['targets'] : []),
+                            fn ($targetId) => $targetId !== ''
+                        ));
+                        $abilities = array_values(array_filter(
+                            array_map('strval', is_array($state['abilities'] ?? null) ? $state['abilities'] : []),
+                            fn ($ability) => $ability !== ''
+                        ));
+                        $inaccuracyPoint = null;
+                        if (
+                            is_array($state['inaccuracyPoint'] ?? null)
+                            && isset($state['inaccuracyPoint']['x'], $state['inaccuracyPoint']['y'])
+                            && is_numeric($state['inaccuracyPoint']['x'])
+                            && is_numeric($state['inaccuracyPoint']['y'])
+                        ) {
+                            $inaccuracyPoint = [
+                                'x' => (float) $state['inaccuracyPoint']['x'],
+                                'y' => (float) $state['inaccuracyPoint']['y'],
+                            ];
+                        }
+
+                        return [
+                            'type' => 'attack',
+                            'status' => $status,
+                            'state' => [
+                                'targets' => $targets,
+                                'damageModifier' => 1.0,
+                                'radiusModifier' => 1.0,
+                                'abilities' => $abilities,
+                                'inaccuracyPoint' => $inaccuracyPoint,
+                            ],
+                        ];
+                    }, $directViewCommands);
+
+                    $unitData['commands'] = array_values(array_merge($preservedCommands, $normalizedDirectViewCommands));
                     $unitData['manualEnvironment'] = null;
                     $umpireUnit->data = $unitData;
                     $umpireUnit->save();
