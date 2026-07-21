@@ -1423,13 +1423,18 @@ class SocketOnMessageCallback extends AbstractSocketCallback
             'messages' => array_merge($goodMessages, $selfMessages),
         ];
         if ($data['messages']) {
-            if ($room->options['isPlayerRoomMap'] ?? false && in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED])) {
+            if (($room->options['isPlayerRoomMap'] ?? false) && in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED])) {
                 $connectionIds = Connection::query()
                     ->where('id', '!=', $currentConnection->id)
                     ->where('room_id', $currentConnection->room_id)
                     ->where('room_map_user_id', $currentConnection->room_map_user_id)
                     ->where('team', $currentConnection->team)
                     ->pluck('id');
+            } elseif (in_array($currentConnection->team, [TeamEnum::ADMIN, TeamEnum::SPECTATOR])) {
+                $connectionIds = GetOtherListenersAction::run($currentConnection, [
+                    TeamEnum::ADMIN,
+                    TeamEnum::SPECTATOR,
+                ]);
             } else {
                 $connectionIds = GetOtherListenersAction::run($currentConnection);
             }

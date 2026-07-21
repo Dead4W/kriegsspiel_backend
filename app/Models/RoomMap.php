@@ -70,6 +70,9 @@ class RoomMap extends Model
 
         $isPlayerRoomMap = ($room->options['isPlayerRoomMap'] ?? false)
             && in_array($connection->team, [TeamEnum::BLUE, TeamEnum::RED], true);
+        $roomMapTeam = $connection->team === TeamEnum::SPECTATOR
+            ? TeamEnum::ADMIN
+            : $connection->team;
 
         if ($isPlayerRoomMap && !$connection->room_map_user_id) {
             return null;
@@ -77,7 +80,7 @@ class RoomMap extends Model
 
         return RoomMap::query()->firstOrCreate([
             'room_id' => $connection->room_id,
-            'team' => $connection->team,
+            'team' => $roomMapTeam,
             'user_id' => $isPlayerRoomMap ? $connection->room_map_user_id : null,
         ]);
     }
