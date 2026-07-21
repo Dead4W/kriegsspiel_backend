@@ -219,6 +219,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             (array) $room->options,
             $currentConnection->team
         );
+        $endResults = $roomOptionsService->getEndResults($room);
 
         yield [
             'type' => 'room',
@@ -230,6 +231,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 'name' => $room->name,
                 'weather' => $room->weather,
                 'ingame_time' => $room->ingame_time->format('Y-m-d H:i:s'),
+                ...$endResults,
             ],
         ];
 

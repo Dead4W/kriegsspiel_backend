@@ -728,18 +728,35 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $allMessages[] = $message;
                         continue;
                     } else if ($message['type'] === 'set_stage') {
-                        if ($room->stage !== $message['data']) {
-                            if ($room->stage === 'planning' && $message['data'] === 'war') {
-                                $room->stage = $message['data'];
-                            } else if ($room->stage === 'war' && $message['data'] === 'end') {
-                                $room->stage = $message['data'];
+                        $stagePayload = is_array($message['data'])
+                            ? $message['data']
+                            : ['stage' => $message['data']];
+                        $nextStage = $stagePayload['stage'] ?? null;
+                        if (!is_string($nextStage)) {
+                            $this->error('Invalid stage value');
+                            continue;
+                        }
+
+                        if ($room->stage !== $nextStage) {
+                            if ($room->stage === 'planning' && $nextStage === 'war') {
+                                $room->stage = $nextStage;
+                                $message['data'] = $nextStage;
+                            } else if ($room->stage === 'war' && $nextStage === 'end') {
+                                $room->stage = $nextStage;
+                                /** @var RoomOptionsService $roomOptionsService */
+                                $roomOptionsService = app(RoomOptionsService::class);
+                                $endResults = $roomOptionsService->normalizeEndResults($stagePayload);
+                                if ($endResults) {
+                                    $room->options = array_merge((array) $room->options, $endResults);
+                                }
+                                $message['data'] = array_merge(['stage' => $nextStage], $endResults);
                             } else {
-                                $this->error("Invalid stage value '{$message['data']}'");
+                                $this->error("Invalid stage value '{$nextStage}'");
                                 // bad stage
                                 continue;
                             }
 
-                            if ($message['data'] === 'war') {
+                            if ($nextStage === 'war') {
                                 \App\Socket\Actions\CopyBoardAction::run(
                                     $roomMap,
                                     TeamEnum::BLUE,

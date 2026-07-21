@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\TeamEnum;
 use App\Models\User;
+use App\Services\RoomOptionsService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -74,13 +75,15 @@ class UserController extends Controller
             ->with('resourcePack')
             ->orderByDesc('id')
             ->get()->map(function (\App\Models\Room $room) use ($user) {
+            /** @var RoomOptionsService $roomOptionsService */
+            $roomOptionsService = app(RoomOptionsService::class);
             $room->makeVisible(['admin_key', 'red_key', 'blue_key']);
             $team = $room->pivot->team;
             $key = ($room->admin_id === $user->id || $team === TeamEnum::ADMIN || $room->stage === 'end')
                 ? $room->admin_key
                 : ($team === TeamEnum::RED ? $room->red_key : ($team === TeamEnum::BLUE ? $room->blue_key : null));
 
-            return [
+            return array_merge([
                 'uuid'        => $room->uuid,
                 'name'        => $room->name,
                 'team'        => $team->value,
@@ -97,7 +100,7 @@ class UserController extends Controller
                 'weather'     => $room->weather ?? null,
                 'created_at'  => $room->created_at,
                 'updated_at'  => $room->updated_at,
-            ];
+            ], $roomOptionsService->getEndResults($room));
         });
 
         return response()->json($rooms);

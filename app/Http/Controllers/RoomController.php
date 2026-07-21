@@ -7,6 +7,7 @@ use App\Models\ResourcePack;
 use App\Models\Room;
 use App\Models\RoomMap;
 use App\Models\User;
+use App\Services\RoomOptionsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -146,6 +147,9 @@ class RoomController extends Controller
             'created_at' => $room->created_at,
             'updated_at' => $room->updated_at,
         ];
+        /** @var RoomOptionsService $roomOptionsService */
+        $roomOptionsService = app(RoomOptionsService::class);
+        $result = array_merge($result, $roomOptionsService->getEndResults($room));
 
         if ($team === \App\Enums\TeamEnum::ADMIN) {
             $result['admin_key'] = $room->admin_key;

@@ -20,6 +20,10 @@ class RoomOptionsService
     public const KEY_ACTIVE_ZONES = 'activeZones';
     public const KEY_RED_TEAM_NAME = 'redTeamName';
     public const KEY_BLUE_TEAM_NAME = 'blueTeamName';
+    public const KEY_BLUE_WIN = 'blueWin';
+    public const KEY_RED_WIN = 'redWin';
+    public const KEY_BLUE_RESULT = 'blueResult';
+    public const KEY_RED_RESULT = 'redResult';
 
     /**
      * Hide enemy-team tactical options for player responses.
@@ -345,6 +349,52 @@ class RoomOptionsService
         }
 
         return $normalized;
+    }
+
+    /**
+     * @return array<string, float|array<string, string>>
+     */
+    public function normalizeEndResults(array $patch): array
+    {
+        $normalized = [];
+        foreach ([self::KEY_BLUE_WIN, self::KEY_RED_WIN] as $key) {
+            if (!array_key_exists($key, $patch) || !is_numeric($patch[$key])) {
+                continue;
+            }
+            $normalized[$key] = max(0.0, min(1.0, (float) $patch[$key]));
+        }
+        foreach ([self::KEY_BLUE_RESULT, self::KEY_RED_RESULT] as $key) {
+            if (!array_key_exists($key, $patch)) {
+                continue;
+            }
+            $descriptions = [];
+            $rawDescriptions = is_array($patch[$key])
+                ? $patch[$key]
+                : ['en' => $patch[$key]];
+            foreach ($rawDescriptions as $language => $value) {
+                if (!is_string($language) || !is_scalar($value)) {
+                    continue;
+                }
+                $language = trim($language);
+                $description = trim((string) $value);
+                if ($language !== '' && $description !== '') {
+                    $descriptions[$language] = mb_substr($description, 0, 2000);
+                }
+            }
+            if ($descriptions) {
+                $normalized[$key] = $descriptions;
+            }
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string, float|array<string, string>>
+     */
+    public function getEndResults(Room $room): array
+    {
+        return $this->normalizeEndResults((array) $room->options);
     }
 
     /**
