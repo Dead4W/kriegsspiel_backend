@@ -228,7 +228,7 @@
                 "id": "general",
                 "title": "General",
                 "stats": { "maxHp": 64, "damage": 1, "speed": 80, "takeDamageMod": 1, "attackRange": 2000, "visionRange": 1000, "ammoMax": 1 },
-                "abilities": ["gallop"],
+                "abilities": [],
                 "formations": ["default", "column", "springing", "kneelingVolley", "forceWalking"],
                 "params": { "suppressionThreshold": 10, "renderIcon": "★", "renderWidthMult": 1.1, "textureUrl": "/assets/units/general.png" }
             },
