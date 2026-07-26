@@ -117,6 +117,12 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 throw new \Exception('RoomMap not found');
             }
 
+            $planningUmpireRoomMap = \App\Socket\Actions\PlanningBoardSyncAction::resolveUmpireRoomMap(
+                $room,
+                $currentConnection,
+            );
+            $isUmpireSource = \App\Socket\Actions\PlanningBoardSyncAction::isUmpireSource($currentConnection);
+
             foreach ($decodedFrameData['messages'] as $message) {
                 if ($message['type'] === 'unit') {
                     $itemData = $message['data'];
@@ -196,6 +202,26 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     if ($isNewUnit) {
                         $unitLimitsUsageChanged = true;
                     }
+                    $itemFrames = is_array($message['frames'] ?? null) ? $message['frames'] : [];
+                    if ($planningUmpireRoomMap) {
+                        \App\Socket\Actions\PlanningBoardSyncAction::syncUnitToUmpire(
+                            $room,
+                            $planningUmpireRoomMap,
+                            $roomMap,
+                            $currentConnection->team,
+                            $itemData,
+                            $itemFrames,
+                            $messagesByTeam,
+                        );
+                    } elseif ($isUmpireSource) {
+                        \App\Socket\Actions\PlanningBoardSyncAction::syncUnitToPlayers(
+                            $room,
+                            $itemData,
+                            $itemFrames,
+                            $messagesByTeam,
+                            $messagesByTeamUser,
+                        );
+                    }
                 } elseif ($message['type'] === 'unit-remove') {
                     if (!empty($message['data'])) {
                         \App\Models\RoomMapItem::query()
@@ -204,6 +230,23 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             ->whereIn('item_id', $message['data'])
                             ->delete();
                         $unitLimitsUsageChanged = true;
+                        if ($planningUmpireRoomMap) {
+                            \App\Socket\Actions\PlanningBoardSyncAction::removeUnitsFromUmpire(
+                                $room,
+                                $planningUmpireRoomMap,
+                                $roomMap,
+                                $currentConnection->team,
+                                (array) $message['data'],
+                                $messagesByTeam,
+                            );
+                        } elseif ($isUmpireSource) {
+                            \App\Socket\Actions\PlanningBoardSyncAction::removeUnitsFromPlayers(
+                                $room,
+                                (array) $message['data'],
+                                $messagesByTeam,
+                                $messagesByTeamUser,
+                            );
+                        }
                     }
                 } elseif ($message['type'] === 'paint_add') {
                     $isSharedForPlayers = $currentConnection->team === TeamEnum::ADMIN

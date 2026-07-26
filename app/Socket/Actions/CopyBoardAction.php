@@ -17,6 +17,9 @@ class CopyBoardAction
             ->where('team', $team)
             ->get();
 
+        /** @var RoomMapItemsService $roomMapItemsService */
+        $roomMapItemsService = app(RoomMapItemsService::class);
+
         foreach ($roomMapsOtherTeam as $roomMapOtherTeam) {
             $otherRoomMapItems = RoomMapItem::query()
                 ->where('room_map_id', $roomMapOtherTeam->id)
@@ -26,16 +29,9 @@ class CopyBoardAction
             foreach ($otherRoomMapItems as $otherRoomMapItem) {
                 $unit = $otherRoomMapItem['data'] ?? [];
                 if (!is_array($unit)) continue;
-                $unitTeam = $unit['team'] ?? null;
-                $unitId = $unit['id'] ?? null;
-                if (!$unitTeam || $unitTeam !== $team->value || !$unitId) continue;
-                if ($unit['type'] == 'messenger') continue;
-                $copyKeys = ['id', 'type', 'team', 'pos', 'label', 'envState', 'hp', 'ammo', 'messagesLinked'];
-                $copyUnit = [];
-                foreach ($copyKeys as $key) {
-                    $copyUnit[$key] = $unit[$key] ?? null;
-                }
-                $copyUnit['roomMapUserId'] = $roomMapOtherTeam->user_id;
+                $copyUnit = $roomMapItemsService->buildUnitCopy($unit, $team, $roomMapOtherTeam->user_id);
+                if ($copyUnit === null) continue;
+                $unitId = $copyUnit['id'];
                 $selfMessages[] = [
                     'type' => 'unit',
                     'data' => $copyUnit,
