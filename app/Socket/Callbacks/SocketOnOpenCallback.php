@@ -381,7 +381,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     })
             )
             ->where('room_id', $roomId)
-            ->orderByRaw('COALESCE(delivered_at, created_at) asc')
+            ->orderBy('ingame_time', 'asc')
             ->orderBy('id', 'asc')
             ->lazy(100);
 
@@ -459,6 +459,12 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             ];
             if ($hideMessengerMetaForPlayer) {
                 unset($chatData['deliveryStatus'], $chatData['routePoints']);
+                $authorTeam = $chatMessage->author_team instanceof TeamEnum
+                    ? $chatMessage->author_team->value
+                    : (string) $chatMessage->author_team;
+                if ($authorTeam !== TeamEnum::ADMIN->value) {
+                    unset($chatData['delivered_at']);
+                }
             }
 
             yield [

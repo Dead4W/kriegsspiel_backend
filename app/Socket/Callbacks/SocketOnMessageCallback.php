@@ -333,7 +333,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             && in_array($roomChat->team, [TeamEnum::RED, TeamEnum::BLUE], true);
                         if ($isMessengerReport) {
                             $roomChat->delivered = true;
-                            $roomChat->delivered_at = Carbon::now();
+                            $roomChat->delivered_at = $room->ingame_time;
                             if (!$roomChat->delivery_status) {
                                 $roomChat->delivery_status = 'delivered';
                             }
@@ -616,7 +616,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $chatMessages = \App\Models\RoomChat::query()
                             ->where('room_id', $room->id)
                             ->where('ingame_time', $oldIngameTime)
-                            ->orderByRaw('COALESCE(delivered_at, created_at) asc')
+                            ->orderBy('ingame_time', 'asc')
                             ->orderBy('id', 'asc')
                             ->get();
 
@@ -800,17 +800,6 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             }
 
                             if ($nextStage === 'war') {
-                                \App\Socket\Actions\CopyBoardAction::run(
-                                    $roomMap,
-                                    TeamEnum::BLUE,
-                                    $selfMessages
-                                );
-                                \App\Socket\Actions\CopyBoardAction::run(
-                                    $roomMap,
-                                    TeamEnum::RED,
-                                    $selfMessages
-                                );
-
                                 \App\Socket\Actions\SnapshotBoardAction::run(
                                     $room,
                                     $roomMap,
@@ -904,12 +893,11 @@ class SocketOnMessageCallback extends AbstractSocketCallback
 
                         $messageCreated = $roomChat->ingame_time->clone();
 
-                        $roomChat->ingame_time = $message['data']['time'];
                         $roomChat->delivered = true;
                         $roomChat->messenger_id = $message['data']['messengerId'] ?? $roomChat->messenger_id;
                         $roomChat->quoted_message_uuid = $message['data']['quotedMessageId'] ?? $roomChat->quoted_message_uuid;
                         $roomChat->delivery_status = $message['data']['deliveryStatus'] ?? 'delivered';
-                        $roomChat->delivered_at = Carbon::now();
+                        $roomChat->delivered_at = $message['data']['time'];
                         $roomChat->save();
 
                         $roomMapIds = [];
@@ -1146,6 +1134,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     $wasDirectViewByUnitId[$unitId] = (bool) ($roomMapTeamUnit['directView'] ?? false);
                                 }
                                 $roomMapTeamUnit['directView'] = false;
+                                $roomMapTeamUnit['isDirectChain'] = false;
                             }
                             unset($roomMapTeamUnit);
                             $isPlayerRoomMap = (bool) ($room->options['isPlayerRoomMap'] ?? false);
@@ -1181,6 +1170,8 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     $roomMapTeamUnits[$messageData['id']] = $messageData;
                                 }
                                 $roomMapTeamUnits[$messageData['id']]['directView'] = true;
+                                $roomMapTeamUnits[$messageData['id']]['isDirectChain'] =
+                                    (bool) ($messageData['isDirectChain'] ?? false);
 
                                 $packetData = [
                                     'unit' => $messageData,
@@ -1216,6 +1207,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                         'team' => $roomMapTeamUnit['team'] ?? null,
                                         'pos' => $roomMapTeamUnit['pos'] ?? null,
                                         'angle' => $roomMapTeamUnit['angle'] ?? null,
+                                        'isDirectChain' => false,
                                         'commands' => [],
                                     ],
                                 ];
@@ -1607,6 +1599,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     continue;
                 }
                 unset($message['data']['deliveryStatus'], $message['data']['routePoints']);
+                $authorTeam = $message['data']['author_team'] ?? null;
+                $authorTeamValue = $authorTeam instanceof TeamEnum
+                    ? $authorTeam->value
+                    : (string) $authorTeam;
+                if ($authorTeamValue !== TeamEnum::ADMIN->value) {
+                    unset($message['data']['delivered_at']);
+                }
                 continue;
             }
 

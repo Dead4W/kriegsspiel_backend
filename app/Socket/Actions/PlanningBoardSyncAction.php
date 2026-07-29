@@ -11,8 +11,7 @@ use App\Services\RoomMapItemsService;
 use Illuminate\Support\Collection;
 
 /**
- * Keeps the player boards and the umpire board in sync while the room is in the planning stage,
- * using the same filters as CopyBoardAction does on the planning => war transition.
+ * Keeps the player boards and the umpire board in sync while the room is in the planning stage.
  */
 class PlanningBoardSyncAction
 {
