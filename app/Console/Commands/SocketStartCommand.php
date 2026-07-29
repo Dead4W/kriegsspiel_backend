@@ -37,7 +37,7 @@ class SocketStartCommand extends Command
             'worker_num' => $workerNum,
             'open_cpu_affinity' => true,
 
-            'max_request' => 100,
+            'max_request' => 10_000,
 
             'input_buffer_size' => 128 * 1024 * 1024,
             'buffer_output_size' => 128 * 1024 * 1024,
