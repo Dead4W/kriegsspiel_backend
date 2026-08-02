@@ -46,6 +46,7 @@ class UserController extends Controller
             'avatar_url' => $user->avatar,
             'picture'    => $user->avatar,
             'provider'   => $user->google_id ? 'google' : null,
+            'is_bot'     => (bool) $user->is_bot,
         ]);
     }
 

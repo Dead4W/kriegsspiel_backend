@@ -2,7 +2,6 @@
 
 namespace App\Socket\Callbacks;
 
-use App\Enums\ConnectionClientTypeEnum;
 use App\Enums\TeamEnum;
 use App\Models\Connection;
 use App\Models\RoomMapItem;
@@ -139,6 +138,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
             'id' => $currentConnection->id,
             'team' => $currentConnection->team,
             'user' => $currentConnection->user?->name,
+            'is_bot' => (bool) $currentConnection->user?->is_bot,
         ];
         if ($room->stage === 'planning' && in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)) {
             $newConnectionData['user_id'] = $currentConnection->room_map_user_id;
@@ -315,6 +315,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                     'id' => $connection->id,
                     'team' => $connection->team,
                     'user' => $connection->user?->name,
+                    'is_bot' => (bool) $connection->user?->is_bot,
                 ];
                 if ($room->stage === 'planning' && in_array($connection->team, [TeamEnum::RED, TeamEnum::BLUE], true)) {
                     $connectionData['user_id'] = $connection->room_map_user_id;
@@ -451,6 +452,7 @@ class SocketOnOpenCallback extends AbstractSocketCallback
                 'deliveryStatus' => $chatMessage->delivery_status,
                 'routePoints' => $chatMessage->route_points ?? [],
                 'orders' => $chatMessage->orders,
+                'observation' => $chatMessage->observation,
                 'unitIds' => $chatMessage->unitIds,
                 'unitFallbackTitles' => $this->buildChatUnitFallbackTitles(
                     (int) $adminRoomMap->id,

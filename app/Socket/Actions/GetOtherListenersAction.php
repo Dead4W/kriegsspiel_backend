@@ -2,7 +2,6 @@
 
 namespace App\Socket\Actions;
 
-use App\Enums\ConnectionClientTypeEnum;
 use App\Models\Connection;
 use Illuminate\Support\Collection;
 use OpenSwoole\Server;

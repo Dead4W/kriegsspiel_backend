@@ -31,9 +31,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $google_id
  * @property string|null $email
  * @property string|null $avatar
+ * @property bool $is_bot
  * @method static \Illuminate\Database\Eloquent\Builder|User whereAvatar($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereEmail($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereGoogleId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereIsBot($value)
  * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\ResourcePack> $resourcePacks
  * @property-read int|null $resource_packs_count
  * @mixin \Eloquent
@@ -44,10 +46,12 @@ class User extends Model implements \Illuminate\Contracts\Auth\Authenticatable {
         'google_id',
         'email',
         'avatar',
+        'is_bot',
     ];
 
     protected $casts = [
         'last_online_at' => 'datetime',
+        'is_bot' => 'boolean',
     ];
 
     public function rooms(): BelongsToMany

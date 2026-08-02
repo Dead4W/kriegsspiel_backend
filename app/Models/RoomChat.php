@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @property string|null $delivery_status
  * @property array|null $route_points
  * @property array|null $orders
+ * @property array|null $observation
  * @property string $status
  * @property bool $delivered
  * @property \Illuminate\Support\Carbon|null $delivered_at
@@ -54,6 +55,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereQuotedMessageUuid($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereRoutePoints($value)
  * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereOrders($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|RoomChat whereObservation($value)
  * @mixin \Eloquent
  */
 class RoomChat extends Model
@@ -69,6 +71,7 @@ class RoomChat extends Model
         'delivery_status',
         'route_points',
         'orders',
+        'observation',
     ];
 
     protected $casts = [
@@ -77,6 +80,7 @@ class RoomChat extends Model
         'unitIds' => 'array',
         'route_points' => 'array',
         'orders' => 'array',
+        'observation' => 'array',
         'ingame_time' => 'datetime',
         'delivered_at' => 'datetime',
     ];

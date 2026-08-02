@@ -7,6 +7,7 @@ use App\Models\Connection;
 use App\Models\RoomMap;
 use App\Models\RoomMapItem;
 use App\Models\RoomUser;
+use App\Services\ChatOrdersService;
 use App\Services\RoomMapItemsService;
 use App\Services\MetricsService;
 use App\Services\RoomOptionsService;
@@ -31,10 +32,22 @@ class SocketOnMessageCallback extends AbstractSocketCallback
         $metrics = app(MetricsService::class);
         $metrics->incrementMessageCount();
 
+        $t = null;
         try {
-            $this->run($server, $frame);
+            for ($i = 0; $i < 3; $i++) {
+                try {
+                    $this->run($server, $frame);
+                    $t = null;
+                    break;
+                } catch (\Throwable $t) {
+                    $metrics->incrementErrorCount();
+                    throw $t;
+                }
+            }
+            if ($t !== null) {
+                throw $t;
+            }
         } catch (\Throwable $t) {
-            $metrics->incrementErrorCount();
             throw $t;
         } finally {
             $duration = microtime(true) - $start;
@@ -135,6 +148,31 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         ->where('item_id', $itemData['id'])
                         ->first();
                     $isNewUnit = $existingUnit === null;
+
+                    // Whose unit it is, before anything about where it may
+                    // stand. The spawn rects and the unit limits are both
+                    // per-team, so without this a red player could lay out the
+                    // blue force inside the blue zone and under the blue
+                    // allowance and pass every remaining check. The umpire is
+                    // exempt: arranging both sides is what an umpire does.
+                    if (in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)) {
+                        $storedTeam = is_array($existingUnit?->data)
+                            ? (string) ($existingUnit->data['team'] ?? '')
+                            : '';
+                        $ownedTeam = $isNewUnit ? (string) ($itemData['team'] ?? '') : $storedTeam;
+                        if ($ownedTeam !== $currentConnection->team->value) {
+                            if ($isNewUnit) {
+                                $selfUnitRemovals[] = (string) ($itemData['id'] ?? '');
+                            } elseif ($existingUnit && is_array($existingUnit->data)) {
+                                $selfMessages[] = [
+                                    'type' => 'unit',
+                                    'data' => $existingUnit->data,
+                                ];
+                            }
+                            continue;
+                        }
+                    }
+
                     /** @var RoomOptionsService $roomOptionsService */
                     $roomOptionsService = app(RoomOptionsService::class);
                     $isInActiveZone = $roomOptionsService->isPointInsideActiveZone(
@@ -223,11 +261,17 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         );
                     }
                 } elseif ($message['type'] === 'unit-remove') {
-                    if (!empty($message['data'])) {
+                    $removals = $this->keepOwnedUnitIds(
+                        $roomMap,
+                        $currentConnection->team,
+                        (array) ($message['data'] ?? []),
+                    );
+                    if ($removals) {
+                        $message['data'] = $removals;
                         \App\Models\RoomMapItem::query()
                             ->where('room_map_id', $roomMap->id)
                             ->where('type', RoomMapItemsService::TYPE_UNIT)
-                            ->whereIn('item_id', $message['data'])
+                            ->whereIn('item_id', $removals)
                             ->delete();
                         $unitLimitsUsageChanged = true;
                         if ($planningUmpireRoomMap) {
@@ -236,13 +280,13 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 $planningUmpireRoomMap,
                                 $roomMap,
                                 $currentConnection->team,
-                                (array) $message['data'],
+                                $removals,
                                 $messagesByTeam,
                             );
                         } elseif ($isUmpireSource) {
                             \App\Socket\Actions\PlanningBoardSyncAction::removeUnitsFromPlayers(
                                 $room,
-                                (array) $message['data'],
+                                $removals,
                                 $messagesByTeam,
                                 $messagesByTeamUser,
                             );
@@ -306,9 +350,24 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $roomChat->quoted_message_uuid = $message['data']['quotedMessageId'] ?? null;
                     $roomChat->messenger_id = $message['data']['messengerId'] ?? null;
                     $roomChat->delivery_status = $message['data']['deliveryStatus'] ?? null;
-                    $roomChat->orders = is_array($message['data']['orders'] ?? null)
+                    $rawOrders = is_array($message['data']['orders'] ?? null)
                         ? $message['data']['orders']
                         : null;
+                    // Commands a player writes are applied to their units on
+                    // delivery, so they are checked here for ownership and for
+                    // being commands at all, next to the same checks the direct
+                    // order channel makes.
+                    $roomChat->orders = in_array($currentConnection->team, [TeamEnum::RED, TeamEnum::BLUE], true)
+                        ? ChatOrdersService::sanitizeForTeam($rawOrders, $room, $currentConnection->team)
+                        : $rawOrders;
+                    // What the reporting units could see, stated for a reader
+                    // that cannot be asked to read prose. It is written by the
+                    // side that holds the board, so a player key may not set
+                    // one — that would be a client describing its own sight.
+                    $roomChat->observation = $currentConnection->team === TeamEnum::ADMIN
+                        && is_array($message['data']['observation'] ?? null)
+                            ? $message['data']['observation']
+                            : null;
                     $roomChat->ingame_time = $room->ingame_time;
                     $roomChat->room_id = $currentConnection->room_id;
                     $roomChat->save();
@@ -324,6 +383,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                     $message['data']['deliveryStatus'] = $roomChat->delivery_status;
                     $message['data']['routePoints'] = $roomChat->route_points ?? [];
                     $message['data']['orders'] = $roomChat->orders;
+                    $message['data']['observation'] = $roomChat->observation;
                     $message['data']['unitFallbackTitles'] = $this->buildChatUnitFallbackTitles(
                         $room->id,
                         (array) ($message['data']['unitIds'] ?? []),
@@ -469,6 +529,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             'deliveryStatus' => $roomChat->delivery_status,
                             'routePoints' => $roomChat->route_points ?? [],
                             'orders' => $roomChat->orders,
+                            'observation' => $roomChat->observation,
                             'team' => $roomChat->team,
                             'status' => $roomChat->status,
                             'delivered' => (bool) $roomChat->delivered,
@@ -527,6 +588,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                             'deliveryStatus' => $roomChat->delivery_status,
                             'routePoints' => $roomChat->route_points ?? [],
                             'orders' => $roomChat->orders,
+                            'observation' => $roomChat->observation,
                             'team' => $roomChat->team,
                             'status' => $roomChat->status,
                             'delivered' => (bool) $roomChat->delivered,
@@ -687,6 +749,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                     'deliveryStatus' => $chatMessage->delivery_status,
                                     'routePoints' => $chatMessage->route_points ?? [],
                                     'orders' => $chatMessage->orders,
+                                    'observation' => $chatMessage->observation,
                                     'unitIds' => $chatMessage->unitIds,
                                 ]
                             ];
@@ -741,14 +804,21 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         $allMessages[] = $message;
                         continue;
                     } else if ($message['type'] === 'room_per_team_settings_update') {
-                        if ($room->stage !== 'planning') {
-                            continue;
-                        }
-
                         $patch = is_array($message['data'] ?? null) ? $message['data'] : [];
                         /** @var RoomOptionsService $roomOptionsService */
                         $roomOptionsService = app(RoomOptionsService::class);
                         $normalizedPatch = $roomOptionsService->normalizePerTeamSettingsPatch($patch);
+
+                        // Spawn zones and briefings describe how a side sets up,
+                        // and rewriting them after the fighting starts would
+                        // change a game already in progress. A side's task is
+                        // not a setup artefact: it is the order it is under, and
+                        // an umpire retasking a side mid-game is the whole point
+                        // of it living in the room rather than in a config file.
+                        if ($room->stage !== 'planning') {
+                            $normalizedPatch = $roomOptionsService->keepRetaskableSettings($normalizedPatch);
+                        }
+
                         if (!$normalizedPatch) {
                             continue;
                         }
@@ -860,6 +930,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'deliveryStatus' => $roomChat->delivery_status,
                                 'routePoints' => $roomChat->route_points ?? [],
                                 'orders' => $roomChat->orders,
+                                'observation' => $roomChat->observation,
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => (bool) $roomChat->delivered,
@@ -1001,6 +1072,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                                 'deliveryStatus' => $roomChat->delivery_status,
                                 'routePoints' => $roomChat->route_points ?? [],
                                 'orders' => $roomChat->orders,
+                                'observation' => $roomChat->observation,
                                 'team' => $roomChat->team,
                                 'status' => $roomChat->status,
                                 'delivered' => true,
@@ -1580,6 +1652,55 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                 ]));
             }
         }
+    }
+
+    /**
+     * The unit ids of these that the connection's own side owns.
+     *
+     * A player's board carries the enemy units it has spotted, so "it is on my
+     * map" is not the same as "it is mine to delete" — and during planning a
+     * removal is forwarded to the umpire's board, where deleting the other
+     * side's force would be deleting it for everyone. The umpire is exempt.
+     *
+     * @param array<int, mixed> $unitIds
+     * @return array<int, string>
+     */
+    private function keepOwnedUnitIds(RoomMap $roomMap, TeamEnum|string|null $team, array $unitIds): array
+    {
+        $ids = array_values(array_filter(array_map(
+            fn ($id) => is_scalar($id) ? (string) $id : '',
+            $unitIds
+        )));
+        if (!$ids) {
+            return [];
+        }
+
+        $teamValue = $team instanceof TeamEnum ? $team->value : (string) $team;
+        if (!in_array($teamValue, [TeamEnum::RED->value, TeamEnum::BLUE->value], true)) {
+            return $ids;
+        }
+
+        $stored = RoomMapItem::query()
+            ->where('room_map_id', $roomMap->id)
+            ->where('type', RoomMapItemsService::TYPE_UNIT)
+            ->whereIn('item_id', $ids)
+            ->get();
+
+        $owned = [];
+        foreach ($stored as $item) {
+            $itemTeam = is_array($item->data) ? (string) ($item->data['team'] ?? '') : '';
+            if ($itemTeam === $teamValue) {
+                $owned[] = (string) $item->item_id;
+            }
+        }
+
+        // An id with nothing stored behind it is left in: there is no owner to
+        // check, and deleting what is not there costs nobody anything.
+        $known = $stored->pluck('item_id')->map(fn ($id) => (string) $id)->all();
+        return array_values(array_unique(array_merge(
+            $owned,
+            array_diff($ids, $known),
+        )));
     }
 
     private function sanitizeMessagesForTeam(array $messages, TeamEnum|string|null $team): array

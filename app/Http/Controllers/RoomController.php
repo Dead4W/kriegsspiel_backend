@@ -132,6 +132,9 @@ class RoomController extends Controller
             $resourcePackUrl = url('/api/resource-pack/' . $room->resourcePack->public_id);
         }
 
+        /** @var RoomOptionsService $roomOptionsService */
+        $roomOptionsService = app(RoomOptionsService::class);
+
         $result = [
             'uuid'       => $room->uuid,
             'team'       => $team,
@@ -140,15 +143,14 @@ class RoomController extends Controller
             'weather'    => $room->weather,
             'ingame_time'=> $room->ingame_time?->format('Y-m-d H:i:s'),
             'admin_id'   => $room->admin_id,
-            'options'    => $room->options,
+            'options'    => $roomOptionsService->sanitizeOptionsForTeam((array) $room->options, $team),
+            'params'     => $roomOptionsService->getRoomParams($room),
             'resource_pack_id' => $room->resource_pack_id,
             'resource_pack_public_id' => $room->resourcePack?->public_id,
             'resource_pack_url' => $resourcePackUrl,
             'created_at' => $room->created_at,
             'updated_at' => $room->updated_at,
         ];
-        /** @var RoomOptionsService $roomOptionsService */
-        $roomOptionsService = app(RoomOptionsService::class);
         $result = array_merge($result, $roomOptionsService->getEndResults($room));
 
         if ($team === \App\Enums\TeamEnum::ADMIN) {

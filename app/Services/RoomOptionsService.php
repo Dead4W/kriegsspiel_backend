@@ -18,6 +18,10 @@ class RoomOptionsService
     public const KEY_TEAM_UNIT_LIMITS = 'teamUnitLimits';
     public const KEY_TEAM_SPAWN_ZONES = 'teamSpawnZones';
     public const KEY_ACTIVE_ZONES = 'activeZones';
+    public const KEY_MISSION = 'mission';
+
+    /** @var list<string> */
+    private const RETASKABLE_KEYS = [self::KEY_MISSION];
     public const KEY_RED_TEAM_NAME = 'redTeamName';
     public const KEY_BLUE_TEAM_NAME = 'blueTeamName';
     public const KEY_BLUE_WIN = 'blueWin';
@@ -259,6 +263,33 @@ class RoomOptionsService
                 continue;
             }
             $result[$team] = $this->normalizePerTeamSettingsTeamValue($value[$team]);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Per-team settings that may still be changed once the fighting has begun.
+     *
+     * Everything else in there describes how a side was set up, and rewriting
+     * it afterwards would edit a game already in progress. A side's task is not
+     * a setup artefact — it is the order the side is under — so it stays
+     * editable, which is what lets it be changed during a game.
+     *
+     * @param array{red?: array<string, mixed>, blue?: array<string, mixed>} $patch
+     * @return array{red?: array<string, mixed>, blue?: array<string, mixed>}
+     */
+    public function keepRetaskableSettings(array $patch): array
+    {
+        $result = [];
+        foreach ($patch as $team => $teamSettings) {
+            if (!is_array($teamSettings)) {
+                continue;
+            }
+            $kept = array_intersect_key($teamSettings, array_flip(self::RETASKABLE_KEYS));
+            if ($kept) {
+                $result[$team] = $kept;
+            }
         }
 
         return $result;
