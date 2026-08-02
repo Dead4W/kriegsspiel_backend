@@ -1364,7 +1364,7 @@ class SocketOnMessageCallback extends AbstractSocketCallback
                         continue;
                     }
                 } else if ($message['type'] === 'direct_view_send_order') {
-                    if ($room->stage !== 'war') {
+                    if (!in_array($room->stage, ['planning', 'war'], true)) {
                         continue;
                     }
                     if (!in_array($currentConnection->team, [TeamEnum::BLUE, TeamEnum::RED], true)) {
